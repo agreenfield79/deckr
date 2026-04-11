@@ -1,0 +1,11 @@
+backend/.env
+backend/.env.*
+backend/workspace_root/
+backend/venv/
+__pycache__/
+*.pyc
+node_modules/
+frontend/dist/
+.DS_Store
+admin/
+.obsidian/
