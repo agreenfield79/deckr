@@ -5,6 +5,7 @@ import MarkdownEditor from '../editor/MarkdownEditor'
 import TabBar, { type TabId } from '../tabs/TabBar'
 import OnboardingTab from '../tabs/OnboardingTab'
 import LoanRequestTab from '../tabs/LoanRequestTab'
+import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 
 // Placeholder for tabs not yet built (Phases 4, 7, 8)
@@ -52,8 +53,8 @@ export default function CenterPane() {
     switch (activeTab) {
       case 'onboarding':  return <OnboardingTab />
       case 'loan':        return <LoanRequestTab />
+      case 'documents':   return <DocumentsTab />
       case 'research':    return <ResearchTab />
-      case 'documents':   return <ComingSoon label="Documents" />
       case 'deck':        return <ComingSoon label="Deck" />
       case 'status':      return <ComingSoon label="Status" />
     }
