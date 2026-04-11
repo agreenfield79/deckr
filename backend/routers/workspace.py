@@ -1,9 +1,48 @@
+import logging
+
 from fastapi import APIRouter
+from pydantic import BaseModel
+
+from services import workspace_service
+
+logger = logging.getLogger("deckr.routers.workspace")
 
 router = APIRouter()
 
 
+class WriteFileRequest(BaseModel):
+    path: str
+    content: str
+
+
+class CreateFolderRequest(BaseModel):
+    path: str
+
+
 @router.get("/tree")
-def get_tree_stub():
-    """Stub — implemented in Phase 2 (workspace_service.list_tree)."""
-    return {"stub": True, "phase": "2", "items": []}
+def get_tree():
+    return workspace_service.list_tree()
+
+
+@router.get("/file")
+def get_file(path: str):
+    content = workspace_service.read_file(path)
+    return {"content": content}
+
+
+@router.post("/file")
+def post_file(body: WriteFileRequest):
+    workspace_service.write_file(body.path, body.content)
+    return {"saved": True, "path": body.path}
+
+
+@router.delete("/file")
+def delete_file(path: str):
+    workspace_service.delete_file(path)
+    return {"deleted": True, "path": path}
+
+
+@router.post("/folder")
+def post_folder(body: CreateFolderRequest):
+    workspace_service.create_folder(body.path)
+    return {"created": True, "path": body.path}
