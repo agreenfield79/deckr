@@ -1,14 +1,29 @@
+import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useProject } from '../context/ProjectContext'
 import MarkdownEditor from '../editor/MarkdownEditor'
+import TabBar, { type TabId } from '../tabs/TabBar'
+import OnboardingTab from '../tabs/OnboardingTab'
+import LoanRequestTab from '../tabs/LoanRequestTab'
+import ResearchTab from '../tabs/ResearchTab'
+
+// Placeholder for tabs not yet built (Phases 4, 7, 8)
+function ComingSoon({ label }: { label: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <p className="text-xs text-[#a8a8a8]">{label} — coming in a future phase</p>
+    </div>
+  )
+}
 
 export default function CenterPane() {
   const { activeFile, closeFile, saveActiveFile } = useProject()
+  const [activeTab, setActiveTab] = useState<TabId>('onboarding')
 
+  // File viewer mode — overrides tab content
   if (activeFile) {
     return (
       <div className="h-full bg-white flex flex-col overflow-hidden">
-        {/* File viewer header */}
         <div className="flex items-center px-3 py-1.5 border-b border-[#e0e0e0] bg-[#f4f4f4] shrink-0">
           <span className="text-xs text-[#525252] font-mono truncate flex-1">
             {activeFile.path}
@@ -33,29 +48,22 @@ export default function CenterPane() {
     )
   }
 
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'onboarding':  return <OnboardingTab />
+      case 'loan':        return <LoanRequestTab />
+      case 'research':    return <ResearchTab />
+      case 'documents':   return <ComingSoon label="Documents" />
+      case 'deck':        return <ComingSoon label="Deck" />
+      case 'status':      return <ComingSoon label="Status" />
+    }
+  }
+
   return (
     <div className="h-full bg-white flex flex-col overflow-hidden">
-      {/* Tab bar */}
-      <div className="px-4 py-3 border-b border-[#e0e0e0] flex gap-1 shrink-0">
-        {['Onboarding', 'Loan Request', 'Documents', 'Research', 'Deck', 'Status'].map(
-          (tab, i) => (
-            <button
-              key={tab}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                i === 0
-                  ? 'text-[#161616] bg-[#f4f4f4]'
-                  : 'text-[#525252] hover:text-[#161616] hover:bg-[#f4f4f4]'
-              }`}
-            >
-              {tab}
-            </button>
-          ),
-        )}
-      </div>
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-xs text-[#a8a8a8] text-center px-4">
-          Tab content — Phase 3+
-        </p>
+      <TabBar active={activeTab} onChange={setActiveTab} />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {renderTab()}
       </div>
     </div>
   )
