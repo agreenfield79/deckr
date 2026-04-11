@@ -7,6 +7,7 @@ import OnboardingTab from '../tabs/OnboardingTab'
 import LoanRequestTab from '../tabs/LoanRequestTab'
 import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
+import DeckTab from '../tabs/DeckTab'
 
 // Placeholder for tabs not yet built (Phases 4, 7, 8)
 function ComingSoon({ label }: { label: string }) {
@@ -55,7 +56,7 @@ export default function CenterPane() {
       case 'loan':        return <LoanRequestTab />
       case 'documents':   return <DocumentsTab />
       case 'research':    return <ResearchTab />
-      case 'deck':        return <ComingSoon label="Deck" />
+      case 'deck':        return <DeckTab />
       case 'status':      return <ComingSoon label="Status" />
     }
   }
