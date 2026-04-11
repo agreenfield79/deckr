@@ -1,1 +1,11 @@
-# Placeholder - implement in Phase 5
+Using the borrower profile, loan request, and any other available workspace context, write a concise Business Overview section for the Credit Memorandum.
+
+Include:
+- Legal name, entity type, state of formation, and year established
+- Primary business activity and NAICS code (if available)
+- Brief description of products/services, customer base, and geographic market
+- Key competitive advantages or differentiators
+- Any recent material changes in business operations
+
+Format as a professional narrative paragraph (150–300 words) suitable for a credit memorandum.
+Do not fabricate details. Use "[DATA MISSING]" for any required information not found in the context.

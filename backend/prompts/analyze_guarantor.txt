@@ -1,1 +1,24 @@
-# Placeholder - implement in Phase 5
+Using the guarantor information from the loan request and any supporting documents in the workspace context, produce a detailed Guarantor Analysis section.
+
+For each guarantor, provide:
+
+### Guarantor: [Full Name]
+- **Relationship to Borrower:** [Ownership %, role]
+- **Guarantee Type:** [Unlimited Personal / Limited to $X / Joint and Several]
+- **Estimated Net Worth:** $[value] ([source and date])
+- **Liquid Assets:** $[value] (cash, marketable securities)
+- **Real Estate Equity:** $[value]
+- **Other Significant Assets:** [description]
+- **Known Liabilities:** $[value] (mortgages, business debts, contingent liabilities)
+- **Credit Profile:** [Strong / Adequate / Limited — note any known issues]
+- **Global Cash Flow:** [Annual income / distributions available for debt service]
+
+After all guarantors, provide:
+
+**GUARANTEE ANALYSIS SUMMARY:**
+1. Combined guarantor net worth vs. total loan exposure
+2. Liquidity adequacy: can guarantors service the debt if the business fails?
+3. Any guarantor concentration concerns (e.g., guarantor net worth is primarily the business being financed)
+4. Overall Guarantor Support Assessment: Strong / Adequate / Marginal / Weak
+
+Do not fabricate figures. Use "[DATA MISSING]" where information is not provided in the context.

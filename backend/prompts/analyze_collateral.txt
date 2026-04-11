@@ -1,1 +1,19 @@
-# Placeholder - implement in Phase 5
+Using the collateral information from the loan request and any supporting documents in the workspace context, produce a detailed Collateral Analysis section.
+
+For each piece of collateral offered, provide:
+
+| Collateral Item | Type | Estimated Value | Lien Position | LTV Ratio | Notes |
+|---|---|---|---|---|---|
+| [item] | [Real Estate / Equipment / A/R / Inventory / Other] | $[value] | [1st / 2nd / Blanket] | [%] | |
+
+After the table, address:
+1. COLLATERAL QUALITY: Assess liquidity, marketability, and stability of value for each collateral type
+2. LTV ANALYSIS: Flag any collateral where LTV exceeds 75% (real estate) or 80% (equipment)
+3. CROSS-COLLATERALIZATION: Note any shared collateral across multiple loans
+4. COVERAGE RATIO: Total collateral value / Total loan exposure = [X]x
+5. GAPS: Identify any requested loan amount not covered by identified collateral
+6. APPRAISAL STATUS: Note whether appraisals are current, outdated, or missing
+
+Conclude with a one-paragraph Collateral Risk Assessment (Strong / Adequate / Marginal / Weak).
+
+Do not fabricate values. Use "[DATA MISSING]" for any required information not found in the context.

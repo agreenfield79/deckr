@@ -1,1 +1,36 @@
-# Placeholder - implement in Phase 5
+Review all documents in the workspace context and identify what is missing from a complete commercial loan underwriting package.
+
+Compare the available workspace documents against this standard underwriting checklist:
+
+REQUIRED DOCUMENTS:
+1. Borrower Profile (business name, entity type, ownership, EIN, formation documents)
+2. Loan Request Form (amount, purpose, term, collateral schedule)
+3. Business Financial Statements — 3 years (P&L, Balance Sheet, Cash Flow Statement)
+4. Business Tax Returns — 3 years
+5. Personal Financial Statements — all guarantors with >20% ownership
+6. Personal Tax Returns — all guarantors, 3 years
+7. Collateral Documentation (appraisals, titles, lien searches, UCC filings)
+8. Bank Statements — most recent 12 months
+9. Accounts Receivable Aging Schedule
+10. Accounts Payable Aging Schedule
+11. Business Licenses and Formation Documents
+12. Lease Agreements (if applicable)
+13. Pro Forma Projections (if new business, acquisition, or major expansion)
+14. Environmental Reports (if real property collateral)
+15. Insurance Certificates (property, liability, key-man)
+
+OUTPUT FORMAT:
+## Missing Items Checklist
+
+| # | Document | Status | Notes |
+|---|---|---|---|
+| 1 | Borrower Profile | [COMPLETE / PARTIAL / MISSING] | |
+| ... | ... | ... | ... |
+
+## Priority Outstanding Items
+List the top 5 most critical missing items that must be resolved before underwriting can be completed, in priority order.
+
+## Package Completeness
+**Overall completeness: [X]% ([X] of 15 items complete or substantially complete)**
+
+Do not fabricate the presence of documents. Only mark as COMPLETE if evidence is clearly present in the workspace context.

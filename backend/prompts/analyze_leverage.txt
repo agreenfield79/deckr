@@ -1,1 +1,18 @@
-# Placeholder - implement in Phase 5
+Using the financial statements provided in the workspace context, perform a detailed Leverage Analysis.
+
+Compute and present the following ratios for each available year:
+
+| Ratio | Formula | Year 1 | Year 2 | Year 3 | Policy Threshold |
+|---|---|---|---|---|---|
+| Debt-to-Equity | Total Debt / Total Equity | | | | < 3.0x |
+| Debt-to-EBITDA | Total Debt / EBITDA | | | | < 4.0x |
+| Senior Debt-to-EBITDA | Senior Debt / EBITDA | | | | < 3.5x |
+| Interest Coverage | EBIT / Interest Expense | | | | > 2.5x |
+| Equity / Total Assets | Total Equity / Total Assets | | | | > 25% |
+
+After the table, provide:
+1. A trend assessment (improving / stable / deteriorating)
+2. Any ratios that exceed policy thresholds, with commentary
+3. A one-paragraph Leverage Risk Assessment (Low / Moderate / Elevated / High)
+
+Do not fabricate figures. Show the inputs used for each ratio calculation. Use "[INSUFFICIENT DATA]" where data is missing.

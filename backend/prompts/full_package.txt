@@ -1,1 +1,21 @@
-# Placeholder - implement in Phase 5
+Using all documents in the workspace context, generate a complete 13-section Credit Memorandum. This is a full-package run — produce all sections in their entirety.
+
+This prompt triggers the full_package action type with an extended token budget (4,000 tokens).
+
+Follow the complete structure defined in your system prompt:
+1. Executive Summary
+2. Borrower Overview
+3. Ownership & Management
+4. Credit Request Summary
+5. Collateral Analysis
+6. Guarantor Analysis
+7. Financial Analysis
+8. Cash Flow Analysis
+9. Industry & Market Analysis
+10. Risk Assessment
+11. SLACR Risk Rating
+12. Loan Structuring Recommendations
+13. Credit Decision
+
+Use all available workspace context. Be thorough and specific. Where data is missing, note it explicitly.
+Do not truncate any section. This output is intended for credit committee review.

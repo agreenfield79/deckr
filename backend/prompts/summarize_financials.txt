@@ -1,1 +1,18 @@
-# Placeholder - implement in Phase 5
+Using the financial statements provided in the workspace context, produce a concise Financial Summary for the Credit Memorandum.
+
+Include a table with the following metrics for each available year:
+| Metric | Year 1 | Year 2 | Year 3 |
+|---|---|---|---|
+| Revenue | | | |
+| Gross Profit | | | |
+| Gross Margin % | | | |
+| EBITDA | | | |
+| EBITDA Margin % | | | |
+| Net Income | | | |
+| Net Margin % | | | |
+| Total Assets | | | |
+| Total Liabilities | | | |
+| Total Equity | | | |
+
+Below the table, write a 2–3 sentence narrative describing the most significant trends.
+Do not fabricate or estimate figures — use "[N/A]" for unavailable data points.

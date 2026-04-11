@@ -1,1 +1,19 @@
-# Placeholder - implement in Phase 5
+Using the financial statements provided in the workspace context, perform a detailed Liquidity Analysis.
+
+Compute and present the following ratios for each available year:
+
+| Ratio | Formula | Year 1 | Year 2 | Year 3 | Policy Threshold |
+|---|---|---|---|---|---|
+| Current Ratio | Current Assets / Current Liabilities | | | | > 1.20x |
+| Quick Ratio | (Cash + Receivables) / Current Liabilities | | | | > 1.00x |
+| Cash Ratio | Cash / Current Liabilities | | | | > 0.25x |
+| Days Sales Outstanding | (A/R / Revenue) × 365 | | | | < 60 days |
+| Days Payable Outstanding | (A/P / COGS) × 365 | | | | < 45 days |
+
+After the table, provide:
+1. Cash position and trend: total cash, change year-over-year, and estimated liquidity runway at current burn rate
+2. Working capital analysis: current assets vs. current liabilities and the net working capital trend
+3. Any liquidity concerns or concentrations (e.g., receivables from a single customer)
+4. A one-paragraph Liquidity Risk Assessment (Low / Moderate / Elevated / High)
+
+Do not fabricate figures. Use "[INSUFFICIENT DATA]" where data is missing.
