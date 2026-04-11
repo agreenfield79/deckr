@@ -1,5 +1,7 @@
 backend/.env
-backend/.env.*
+backend/.env.local
+backend/.env.production
+backend/.env.staging
 backend/workspace_root/
 backend/venv/
 __pycache__/
@@ -9,3 +11,4 @@ frontend/dist/
 .DS_Store
 admin/
 .obsidian/
+tests/

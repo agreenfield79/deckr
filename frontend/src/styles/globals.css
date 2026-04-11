@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-ibm-blue: #0f62fe;
+  --color-ibm-blue-dark: #0043ce;
+  --color-ibm-blue-light: #4589ff;
+
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f4f4f4;
+  --color-surface-overlay: #e0e0e0;
+
+  --color-text-primary: #161616;
+  --color-text-secondary: #525252;
+  --color-text-placeholder: #a8a8a8;
+
+  --color-border: #e0e0e0;
+  --color-border-strong: #8d8d8d;
+
+  --color-success: #198038;
+  --color-warning: #f1c21b;
+  --color-danger: #da1e28;
+}

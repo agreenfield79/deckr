@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+requests
+python-multipart
+# ibm-watsonx-orchestrate-adk  # Uncomment for Phase 12 Orchestrate integration
