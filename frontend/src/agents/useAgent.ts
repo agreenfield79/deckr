@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as agentApi from '../api/agent'
 import { useSession } from '../hooks/useSession'
-import type { AgentInfo, AgentMessage, AgentName } from '../types/agent'
+import type { AgentInfo, AgentMessage, AgentName, AgentResponse } from '../types/agent'
 
 export function useAgent() {
   const { sessionId } = useSession()
@@ -66,7 +66,7 @@ export function useAgent() {
   )
 
   const runAgent = useCallback(
-    async (agentName: string) => {
+    async (agentName: string): Promise<AgentResponse | null> => {
       setRunningAgent(agentName)
       try {
         const res = await agentApi.runAgent(agentName, sessionId)
@@ -78,6 +78,7 @@ export function useAgent() {
           timestamp: Date.now(),
         }
         setMessages((prev) => [...prev, resultMsg])
+        return res
       } catch (err) {
         const detail =
           err instanceof Error ? err.message : 'Agent run failed.'
@@ -88,6 +89,7 @@ export function useAgent() {
           timestamp: Date.now(),
         }
         setMessages((prev) => [...prev, errMsg])
+        return null
       } finally {
         setRunningAgent(null)
       }

@@ -5,9 +5,11 @@ import AgentSelector from './AgentSelector'
 import AgentMessageItem from './AgentMessage'
 import AgentActions from './AgentActions'
 import { useProject } from '../context/ProjectContext'
+import { useToast } from '../context/ToastContext'
 
 export default function AgentPanel() {
-  const { refreshTree } = useProject()
+  const { refreshTree, writeFile } = useProject()
+  const { success: toastSuccess, error: toastError } = useToast()
   const {
     agents,
     selectedAgent,
@@ -44,16 +46,26 @@ export default function AgentPanel() {
   }
 
   const handleRunAgent = async (agentName: string) => {
-    await runAgent(agentName)
+    const res = await runAgent(agentName)
     await refreshTree()
+    if (res?.saved_files && res.saved_files.length > 1) {
+      toastSuccess(
+        `Saved to ${res.saved_to} — ${res.saved_files.length - 1} additional analyses queued`,
+      )
+    } else if (res?.saved_to) {
+      toastSuccess(`Saved to ${res.saved_to}`)
+    }
   }
 
   const handleSaveToWorkspace = async (content: string, agentName: string) => {
-    // Triggers a new sendMessage with save_to_workspace flag
-    // This is handled via the /run endpoint — just notify for now
-    // Full save UI is in Phase 6
-    void content
-    void agentName
+    const savePath = `Agent Notes/${agentName}_notes.md`
+    try {
+      await writeFile(savePath, content)
+      await refreshTree()
+      toastSuccess(`Saved to ${savePath}`)
+    } catch {
+      toastError('Failed to save to workspace')
+    }
   }
 
   const activeAgentLabel =
