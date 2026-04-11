@@ -42,6 +42,17 @@ def delete_file(path: str):
     return {"deleted": True, "path": path}
 
 
+class RenameRequest(BaseModel):
+    old_path: str
+    new_path: str
+
+
+@router.patch("/rename")
+def rename_file(body: RenameRequest):
+    workspace_service.rename_file(body.old_path, body.new_path)
+    return {"renamed": True, "old": body.old_path, "new": body.new_path}
+
+
 @router.post("/folder")
 def post_folder(body: CreateFolderRequest):
     workspace_service.create_folder(body.path)

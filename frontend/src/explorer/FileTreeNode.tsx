@@ -14,6 +14,7 @@ interface FileTreeNodeProps {
   depth?: number
   activePath: string | null
   onFileClick: (path: string) => void
+  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void
 }
 
 export default function FileTreeNode({
@@ -21,6 +22,7 @@ export default function FileTreeNode({
   depth = 0,
   activePath,
   onFileClick,
+  onContextMenu,
 }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(true)
   const indent = 8 + depth * 12
@@ -32,6 +34,7 @@ export default function FileTreeNode({
           className="w-full flex items-center gap-1.5 py-1 text-xs text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8] rounded transition-colors text-left"
           style={{ paddingLeft: `${indent}px`, paddingRight: '8px' }}
           onClick={() => setExpanded(!expanded)}
+          onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, node) }}
         >
           <span className="shrink-0 text-[#8d8d8d]">
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -50,6 +53,7 @@ export default function FileTreeNode({
                 depth={depth + 1}
                 activePath={activePath}
                 onFileClick={onFileClick}
+                onContextMenu={onContextMenu}
               />
             ))}
           </div>
@@ -70,6 +74,7 @@ export default function FileTreeNode({
       )}
       style={{ paddingLeft: `${indent}px`, paddingRight: '8px' }}
       onClick={() => onFileClick(node.path)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, node) }}
     >
       <span className={clsx('shrink-0', isActive ? 'text-blue-200' : 'text-[#8d8d8d]')}>
         <FileText size={13} />

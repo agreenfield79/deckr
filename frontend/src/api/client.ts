@@ -59,4 +59,10 @@ export const post = <T>(path: string, body?: unknown): Promise<T> =>
 export const del = <T>(path: string): Promise<T> =>
   apiFetch<T>(path, { method: 'DELETE' })
 
+export const patch = <T>(path: string, body?: unknown): Promise<T> =>
+  apiFetch<T>(path, {
+    method: 'PATCH',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
 export default apiFetch

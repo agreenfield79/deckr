@@ -90,3 +90,14 @@ def create_folder(relative_path: str) -> None:
     path = resolve_path(relative_path)
     path.mkdir(parents=True, exist_ok=True)
     logger.info("create_folder: %s", relative_path)
+
+
+def rename_file(old_path: str, new_path: str) -> None:
+    src = resolve_path(old_path)
+    dst = resolve_path(new_path)
+    if not src.exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Source not found: {old_path}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src.rename(dst)
+    logger.info("rename_file: %s → %s", old_path, new_path)

@@ -1,4 +1,4 @@
-import { get, post, del } from './client'
+import { get, post, del, patch } from './client'
 import type { TreeResponse } from '../types/workspace'
 
 export const getTree = () =>
@@ -17,3 +17,9 @@ export const deleteFile = (path: string) =>
 
 export const createFolder = (path: string) =>
   post<{ created: boolean; path: string }>('/workspace/folder', { path })
+
+export const renameFile = (oldPath: string, newPath: string) =>
+  patch<{ renamed: boolean; old: string; new: string }>('/workspace/rename', {
+    old_path: oldPath,
+    new_path: newPath,
+  })

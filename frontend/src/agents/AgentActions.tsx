@@ -9,6 +9,13 @@ const AGENT_LABELS: Record<string, string> = {
   coordination: 'Coordination',
   review:    'Review',
 }
+const AGENT_TOOLTIPS: Record<string, string> = {
+  packaging:    'Runs all financial and risk agents then assembles the full credit package',
+  financial:    'Analyzes uploaded financials — leverage, liquidity, collateral, and guarantor',
+  risk:         'Scores the deal using the SLACR framework and writes a risk narrative',
+  coordination: 'Coordinates multi-agent workflows — coming soon',
+  review:       'Performs a final compliance review of the complete package — coming soon',
+}
 
 interface AgentActionsProps {
   agents: AgentInfo[]
@@ -35,7 +42,11 @@ export default function AgentActions({ agents, runningAgent, onRun }: AgentActio
               key={agent.name}
               onClick={() => !isStub && onRun(agent.name)}
               disabled={isStub || !!runningAgent}
-              title={isStub ? `${agent.display_name} — Coming soon` : `Run ${agent.display_name}`}
+              title={
+            isStub
+              ? `${agent.display_name} — Coming soon`
+              : AGENT_TOOLTIPS[agent.name] ?? `Run ${agent.display_name}`
+          }
               className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded transition-colors truncate
                 ${
                   isStub

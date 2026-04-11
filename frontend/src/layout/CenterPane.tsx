@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Sparkles } from 'lucide-react'
 import { useProject } from '../context/ProjectContext'
 import MarkdownEditor from '../editor/MarkdownEditor'
 import TabBar, { type TabId } from '../tabs/TabBar'
@@ -11,8 +11,11 @@ import DeckTab from '../tabs/DeckTab'
 import StatusTab from '../tabs/StatusTab'
 
 export default function CenterPane() {
-  const { activeFile, closeFile, saveActiveFile } = useProject()
+  const { activeFile, closeFile, saveActiveFile, tree, treeLoading } = useProject()
   const [activeTab, setActiveTab] = useState<TabId>('onboarding')
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  const isNewUser = !treeLoading && tree.length === 0 && !bannerDismissed
 
   // File viewer mode — overrides tab content
   if (activeFile) {
@@ -56,6 +59,31 @@ export default function CenterPane() {
   return (
     <div className="h-full bg-white flex flex-col overflow-hidden">
       <TabBar active={activeTab} onChange={setActiveTab} />
+
+      {/* First-run welcome banner */}
+      {isNewUser && (
+        <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-[#edf4ff] border-b border-[#d0e2ff] text-xs text-[#0043ce]">
+          <Sparkles size={13} className="shrink-0" />
+          <span>
+            Welcome to Deckr! Start by filling out the{' '}
+            <button
+              className="underline font-semibold hover:no-underline"
+              onClick={() => setActiveTab('onboarding')}
+            >
+              Onboarding
+            </button>{' '}
+            form to set up your borrower workspace.
+          </span>
+          <button
+            className="ml-auto p-0.5 hover:bg-[#d0e2ff] rounded transition-colors"
+            onClick={() => setBannerDismissed(true)}
+            title="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-hidden">
         {renderTab()}
       </div>
