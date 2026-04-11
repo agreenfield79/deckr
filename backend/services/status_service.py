@@ -67,8 +67,8 @@ _CHECKLIST = [
         "label":  "SLACR Scored",
         "path":   "SLACR/slacr.json",
         "type":   "file_exists",
-        "tab":    None,
-        "action": "Run Risk Agent →",
+        "tab":    "slacr",
+        "action": "Score SLACR",
     },
     {
         "label":  "Deck Generated",

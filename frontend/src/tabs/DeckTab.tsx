@@ -9,12 +9,16 @@ import {
   Zap,
   Check,
   X,
+  BarChart2,
 } from 'lucide-react'
 import * as deckApi from '../api/deck'
+import * as slacrApi from '../api/slacr'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import { useToast } from '../context/ToastContext'
 import { useProject } from '../context/ProjectContext'
 import { useSession } from '../hooks/useSession'
+import { getRatingColor } from '../types/slacr'
+import type { SlacrOutput } from '../types/slacr'
 
 const SECTION_NAMES = [
   'Credit Request Summary',
@@ -81,14 +85,18 @@ export default function DeckTab() {
   const [editingSection, setEditingSection] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [regeneratingSection, setRegeneratingSection] = useState<string | null>(null)
+  const [slacrData, setSlacrData] = useState<SlacrOutput | null>(null)
 
   const fetchDeck = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await deckApi.getDeck()
-      if (res.exists && res.content) {
-        setDeckContent(res.content)
-        setSections(parseSections(res.content))
+      const [deckRes] = await Promise.all([
+        deckApi.getDeck(),
+        slacrApi.getScore().then(setSlacrData).catch(() => {}),
+      ])
+      if (deckRes.exists && deckRes.content) {
+        setDeckContent(deckRes.content)
+        setSections(parseSections(deckRes.content))
       } else {
         setDeckContent(null)
         setSections({})
@@ -370,11 +378,22 @@ export default function DeckTab() {
                         autoFocus
                       />
                     ) : isPending ? (
-                      <p className="text-xs text-[#8d6708] italic">
-                        Not yet generated. Click &ldquo;Regenerate Section&rdquo; to produce this content, or run the relevant agent from the Agent Panel.
-                      </p>
+                      <>
+                        <p className="text-xs text-[#8d6708] italic">
+                          Not yet generated. Click &ldquo;Regenerate Section&rdquo; to produce this content, or run the relevant agent from the Agent Panel.
+                        </p>
+                        {name === 'SLACR Score' && slacrData && (
+                          <SlacrScorePanel data={slacrData} />
+                        )}
+                      </>
                     ) : (
-                      <MarkdownViewer content={content} />
+                      <>
+                        <MarkdownViewer content={content} />
+                        {/* SLACR Score section: show live data panel from slacr.json */}
+                        {name === 'SLACR Score' && slacrData && (
+                          <SlacrScorePanel data={slacrData} />
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -383,6 +402,104 @@ export default function DeckTab() {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SLACR Score inline panel — shown inside the "SLACR Score" deck section
+// ---------------------------------------------------------------------------
+
+const DIMENSION_LABELS: Record<string, string> = {
+  strength:         'Sponsor / Management',
+  leverage:         'Leverage & Capitalization',
+  ability_to_repay: 'Ability to Repay',
+  collateral:       'Collateral Quality',
+  risk_factors:     'Industry & Market Risk',
+}
+
+function SlacrScorePanel({ data }: { data: SlacrOutput }) {
+  const ratingColor = getRatingColor(data.weighted_score)
+  return (
+    <div className="mt-4 border border-[#e0e0e0] rounded-lg overflow-hidden">
+      <div
+        className="px-4 py-2.5 flex items-center justify-between"
+        style={{ backgroundColor: `${ratingColor}18` }}
+      >
+        <div className="flex items-center gap-2">
+          <BarChart2 size={13} style={{ color: ratingColor }} />
+          <span className="text-xs font-semibold text-[#161616]">SLACR Live Score</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold" style={{ color: ratingColor }}>
+            {data.weighted_score.toFixed(2)}
+          </span>
+          <span className="text-xs font-medium" style={{ color: ratingColor }}>
+            {data.rating}
+          </span>
+          <span className="text-xs text-[#525252]">→ {data.decision}</span>
+        </div>
+      </div>
+
+      {/* Dimension scores table */}
+      <table className="w-full text-xs border-t border-[#e0e0e0]">
+        <thead>
+          <tr className="bg-[#f4f4f4]">
+            <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-[#525252] uppercase tracking-wider">
+              Dimension
+            </th>
+            <th className="text-center px-3 py-1.5 text-[10px] font-semibold text-[#525252] uppercase tracking-wider">
+              Score
+            </th>
+            <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-[#525252] uppercase tracking-wider">
+              Notes
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(DIMENSION_LABELS).map(([field, label]) => {
+            const score = data.input[field as keyof typeof data.input] as number
+            const noteText = data.input.notes[label] ?? ''
+            return (
+              <tr key={field} className="border-t border-[#f4f4f4]">
+                <td className="px-3 py-1.5 text-[#161616]">{label}</td>
+                <td className="px-3 py-1.5 text-center">
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                    style={{
+                      color:           score <= 2 ? '#24a148' : score >= 4 ? '#da1e28' : '#8d6708',
+                      backgroundColor: score <= 2 ? '#defbe6' : score >= 4 ? '#fff1f1' : '#fdf6dd',
+                    }}
+                  >
+                    {score}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-[#525252] italic text-[10px]">
+                  {noteText || '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {/* Mitigants */}
+      {data.mitigants.length > 0 &&
+        data.mitigants[0] !== 'Standard monitoring and covenant compliance' && (
+          <div className="border-t border-[#e0e0e0] px-4 py-3">
+            <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
+              Recommended Conditions
+            </p>
+            <ul className="space-y-1">
+              {data.mitigants.map((m, i) => (
+                <li key={i} className="flex gap-1.5 text-xs text-[#525252]">
+                  <span className="text-[#0f62fe] shrink-0">·</span>
+                  {m}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
     </div>
   )
 }

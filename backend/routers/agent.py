@@ -1,9 +1,11 @@
 import logging
+import re
 
 from fastapi import APIRouter, BackgroundTasks
 
 from models.agent import AgentRequest, AgentResponse
-from services import agent_registry, agent_service
+from models.slacr import SlacrInput
+from services import agent_registry, agent_service, slacr_service, workspace_service
 
 logger = logging.getLogger("deckr.routers.agent")
 
@@ -88,6 +90,19 @@ def run_agent(
             agent_name, len(queued_paths),
         )
 
+    # Risk agent: parse scores from narrative, compute SLACR JSON, save analysis
+    if agent_name == "risk":
+        narrative = result["reply"]
+        parsed = _parse_slacr_scores(narrative)
+        slacr_input = SlacrInput(**parsed, notes={})
+        slacr_output = slacr_service.compute(slacr_input, ai_narrative=narrative)
+        slacr_service.save(slacr_output)
+        workspace_service.write_file("SLACR/slacr_analysis.md", narrative)
+        logger.info(
+            "POST /agent/risk/run: SLACR JSON + analysis saved (score=%.2f %s)",
+            slacr_output.weighted_score, slacr_output.rating,
+        )
+
     all_files = ([save_path] + queued_paths) if queued_paths else None
 
     return AgentResponse(
@@ -97,3 +112,36 @@ def run_agent(
         saved_to=result.get("saved_to"),
         saved_files=all_files,
     )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_SLACR_DIMENSION_MAP = {
+    r"[Ss]ponsor|[Mm]anagement [Qq]uality":       "strength",
+    r"[Ll]everage|[Cc]apitalization":              "leverage",
+    r"[Aa]sset [Qq]uality|[Cc]ollateral":          "collateral",
+    r"[Cc]ash [Ff]low|[Rr]epayment [Cc]apacity":  "ability_to_repay",
+    r"[Ii]ndustry|[Mm]arket [Rr]isk":             "risk_factors",
+}
+
+
+def _parse_slacr_scores(text: str) -> dict:
+    """
+    Parse dimension scores from SLACR agent output (agent scale: 5=best, 1=worst)
+    and convert to service scale (1=best, 5=worst) via: service_score = 6 - agent_score.
+    Falls back to 3 (neutral) for any dimension not found.
+    """
+    rows = re.findall(r"\|([^|]+)\|[^|]*\|\s*(\d)\s*\|", text)
+    result: dict[str, int] = {}
+    for label, score_str in rows:
+        agent_score = int(score_str)
+        service_score = max(1, min(5, 6 - agent_score))
+        for pattern, field in _SLACR_DIMENSION_MAP.items():
+            if field not in result and re.search(pattern, label, re.IGNORECASE):
+                result[field] = service_score
+                break
+    for field in ("strength", "leverage", "ability_to_repay", "collateral", "risk_factors"):
+        result.setdefault(field, 3)
+    return result

@@ -9,6 +9,7 @@ import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
 import StatusTab from '../tabs/StatusTab'
+import SlacrWorksheet from '../tabs/SlacrWorksheet'
 
 export default function CenterPane() {
   const { activeFile, closeFile, saveActiveFile, tree, treeLoading } = useProject()
@@ -52,6 +53,7 @@ export default function CenterPane() {
       case 'documents':   return <DocumentsTab />
       case 'research':    return <ResearchTab />
       case 'deck':        return <DeckTab />
+      case 'slacr':       return <SlacrWorksheet />
       case 'status':      return <StatusTab onNavigate={setActiveTab} />
     }
   }
@@ -84,7 +86,7 @@ export default function CenterPane() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {renderTab()}
       </div>
     </div>
