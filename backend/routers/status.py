@@ -1,9 +1,15 @@
+import logging
+
 from fastapi import APIRouter
+
+from services import status_service
+
+logger = logging.getLogger("deckr.routers.status")
 
 router = APIRouter()
 
 
 @router.get("")
-def get_status_stub():
-    """Stub — implemented in Phase 8 (status_service.get_status)."""
-    return {"stub": True, "phase": "8", "items": [], "percentage": 0}
+def get_status():
+    """Return the 10-item package completeness checklist and overall percentage."""
+    return status_service.get_status()

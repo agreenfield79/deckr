@@ -8,15 +8,7 @@ import LoanRequestTab from '../tabs/LoanRequestTab'
 import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
-
-// Placeholder for tabs not yet built (Phases 4, 7, 8)
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <p className="text-xs text-[#a8a8a8]">{label} — coming in a future phase</p>
-    </div>
-  )
-}
+import StatusTab from '../tabs/StatusTab'
 
 export default function CenterPane() {
   const { activeFile, closeFile, saveActiveFile } = useProject()
@@ -57,7 +49,7 @@ export default function CenterPane() {
       case 'documents':   return <DocumentsTab />
       case 'research':    return <ResearchTab />
       case 'deck':        return <DeckTab />
-      case 'status':      return <ComingSoon label="Status" />
+      case 'status':      return <StatusTab onNavigate={setActiveTab} />
     }
   }
 
