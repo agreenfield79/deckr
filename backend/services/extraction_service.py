@@ -94,6 +94,16 @@ def extract_document(relative_path: str, content: bytes | None = None) -> str | 
         "extraction: %s → %d chars extracted, sidecar written to %s",
         relative_path, len(text), sidecar_rel,
     )
+
+    # Push extracted text into the embeddings index immediately so the very
+    # next agent call can retrieve it without waiting for a full COS rebuild.
+    if os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true":
+        try:
+            from services import embeddings_service
+            embeddings_service.update_file(relative_path, text.strip())
+        except Exception as e:
+            logger.debug("extraction: embeddings update skipped — %s", e)
+
     return sidecar_rel
 
 

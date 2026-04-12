@@ -4,7 +4,7 @@ embeddings_service.py — semantic workspace retrieval (Step 14.2 / 14.3)
 Activated when ENABLE_EMBEDDINGS=true in .env.
 
 Architecture:
-  - Embedding model: ibm/slate-125m-english-rtrvr via watsonx REST API
+  - Embedding model: ibm/slate-125m-english-rtrvr-v2 via watsonx REST API
     (same auth as watsonx_client.py — uses token_cache, no SDK version quirks)
   - Index: in-memory dict, persisted to backend/.deckr_embeddings.json
     (local file, never uploaded to COS, excluded from git)
@@ -29,7 +29,7 @@ import requests
 
 logger = logging.getLogger("deckr.embeddings_service")
 
-EMBEDDING_MODEL  = "ibm/slate-125m-english-rtrvr"
+EMBEDDING_MODEL  = "ibm/slate-125m-english-rtrvr-v2"   # v1 deprecated 2025
 MAX_CHUNK_CHARS  = 1_200   # ~400 tokens; model hard-cap is 512 tokens
 TOP_K_SEARCH     = 20      # candidates retrieved by cosine similarity
 TOP_N_RERANK     = 5       # final chunks after re-ranking
@@ -41,6 +41,10 @@ _INDEX_FILE = Path(__file__).parent.parent / ".deckr_embeddings.json"
 #   {rel_path: {"mtime": float, "chunks": [str], "embeddings": [[float]]}}
 _INDEX: dict | None = None
 _INDEX_DIRTY = False
+# Tracks whether a COS bucket scan has been done this process lifetime.
+# Reset to False on each server start so the first agent call picks up any
+# newly extracted sidecars that were written to COS since last restart.
+_COS_SYNCED = False
 
 
 # ---------------------------------------------------------------------------
@@ -197,14 +201,125 @@ def update_file(rel_path: str, text: str) -> None:
 
 def build_index(force: bool = False) -> int:
     """
-    Scan all local workspace text files and embed any that are new or modified.
-    Skips binary files (PDF, xlsx, etc.) — they must go through extraction first.
-    Returns number of files newly embedded.
+    Build or refresh the embedding index.
+
+    When USE_COS=true: scans the COS bucket for .extracted.json sidecars (PDF
+    text) and plain text/markdown files, embedding any that are new or changed.
+
+    When USE_COS=false: scans the local workspace directory instead.
+
+    Binary files (PDF, xlsx, etc.) are always skipped — their text is available
+    via extraction sidecars.  Returns number of files newly embedded.
     """
+    index   = _load_index()
+    use_cos = os.getenv("USE_COS", "false").lower() == "true"
+
+    if use_cos:
+        return _build_index_cos(index, force)
+    return _build_index_local(index, force)
+
+
+def _build_index_cos(index: dict, force: bool = False) -> int:
+    """
+    COS-aware index bootstrap.
+
+    Walks the COS bucket under the workspace key prefix and embeds:
+      - *.extracted.json sidecars  → indexed under the source file path
+        (e.g. "Financials/10K-NVDA.pdf") so agent_service context filtering works
+      - *.md / *.txt text files    → indexed under their relative path
+
+    Timestamp-based deduplication skips objects already in the index whose
+    COS LastModified hasn't changed since the last build.
+    """
+    try:
+        from services import cos_service
+        client = cos_service._get_client()
+        bucket = cos_service._bucket()
+        prefix = cos_service._workspace_root() + "/"   # e.g. "workspace_root/projects/default/"
+    except Exception as e:
+        logger.error("embeddings_service._build_index_cos: COS init failed — %s", e)
+        return 0
+
+    files_to_embed: list[tuple[str, str]] = []   # (display_rel_path, text)
+
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                rel = key[len(prefix):]   # strip workspace prefix → workspace-relative path
+
+                last_mod    = obj.get("LastModified")
+                last_mod_ts = last_mod.timestamp() if last_mod else 0
+
+                if rel.endswith(".extracted.json"):
+                    # Index as the SOURCE file path (sans sidecar suffix)
+                    source_rel = rel[: -len(".extracted.json")]
+                    cached     = index.get(source_rel)
+                    if not force and cached and cached.get("mtime", 0) >= last_mod_ts:
+                        continue
+                    try:
+                        raw  = cos_service.read_file(rel)
+                        data = json.loads(raw)
+                        text = data.get("text", "")
+                        if len(text.strip()) >= 20:
+                            files_to_embed.append((source_rel, text))
+                    except Exception as e:
+                        logger.warning("embeddings_service._build_index_cos: sidecar %s — %s", rel, e)
+
+                elif rel.endswith((".md", ".txt")):
+                    cached = index.get(rel)
+                    if not force and cached and cached.get("mtime", 0) >= last_mod_ts:
+                        continue
+                    try:
+                        text = cos_service.read_file(rel)
+                        if len(text.strip()) >= 20:
+                            files_to_embed.append((rel, text))
+                    except Exception as e:
+                        logger.warning("embeddings_service._build_index_cos: text %s — %s", rel, e)
+
+    except Exception as e:
+        logger.error("embeddings_service._build_index_cos: bucket listing failed — %s", e)
+        return 0
+
+    if not files_to_embed:
+        logger.debug("embeddings_service._build_index_cos: no new/changed files to embed")
+        return 0
+
+    logger.info("embeddings_service._build_index_cos: embedding %d file(s)", len(files_to_embed))
+    processed = 0
+
+    for rel_path, text in files_to_embed:
+        chunks = chunk_text(text)
+        if not chunks:
+            continue
+        try:
+            embeddings = _embed(chunks)
+            index[rel_path] = {
+                "mtime":      time.time(),
+                "chunks":     chunks,
+                "embeddings": embeddings,
+            }
+            processed += 1
+            logger.info(
+                "embeddings_service._build_index_cos: indexed %s (%d chunks)",
+                rel_path, len(chunks),
+            )
+        except Exception as e:
+            logger.error("embeddings_service._build_index_cos: %s — %s", rel_path, e)
+
+    if processed > 0:
+        _save_index()
+
+    logger.info("embeddings_service._build_index_cos: %d file(s) newly indexed", processed)
+    return processed
+
+
+def _build_index_local(index: dict, force: bool = False) -> int:
+    """Local-filesystem index build (used when USE_COS=false)."""
     from services import workspace_service
 
-    root  = workspace_service._get_root()
-    index = _load_index()
+    root = workspace_service._get_root()
 
     _SKIP_SUFFIXES = {".pdf", ".xlsx", ".xls", ".csv", ".docx", ".doc",
                       ".png", ".jpg", ".jpeg", ".gif", ".zip"}
@@ -223,7 +338,7 @@ def build_index(force: bool = False) -> int:
 
         cached = index.get(rel)
         if not force and cached and cached.get("mtime", 0) >= mtime:
-            continue   # up to date
+            continue
 
         try:
             text = file_path.read_text(encoding="utf-8")
@@ -375,18 +490,23 @@ def get_relevant_context(query: str, context_folders: list[str]) -> str:
     """
     Retrieve and re-rank the most relevant workspace chunks for a query.
 
-    Lazily triggers build_index() on first call when the in-memory index is empty
-    so that the context is always populated even before any file write hooks fire.
+    Triggers build_index() when:
+      - The in-memory index is empty (first ever call, or after cache delete)
+      - USE_COS=true and no COS scan has been done this process lifetime
+        (ensures newly extracted COS sidecars are picked up after each restart)
 
     Returns a formatted multi-file context string for injection into agent prompts,
     or a sentinel string when no documents are found.
     """
-    index = _load_index()
+    global _COS_SYNCED
+    index   = _load_index()
+    use_cos = os.getenv("USE_COS", "false").lower() == "true"
 
-    # Lazy rebuild on first call or if index is empty
-    if not index:
+    # Rebuild when index is empty OR when running COS mode and haven't synced yet
+    if not index or (use_cos and not _COS_SYNCED):
         built = build_index()
-        if built == 0 and not index:
+        _COS_SYNCED = True   # mark done for this process lifetime
+        if not _load_index():
             logger.info("embeddings_service: no files to index — returning empty context")
             return "[No workspace documents found]"
 
