@@ -142,12 +142,73 @@ def read_file(relative_path: str) -> str:
     key = _key(relative_path)
     try:
         resp = client.get_object(Bucket=_bucket(), Key=key)
-        return resp["Body"].read().decode("utf-8")
+        data = resp["Body"].read()
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=415,
+                detail=f"'{relative_path}' is a binary file and cannot be displayed as text.",
+            )
+    except HTTPException:
+        raise
     except ClientError as e:
         if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
             raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
         logger.error("cos_service.read_file: %s — %s", relative_path, e)
         raise HTTPException(status_code=500, detail="COS read error")
+
+
+def read_binary(relative_path: str) -> bytes:
+    """Read raw bytes from COS — used by extraction_service for PDFs."""
+    _validate_relative_path(relative_path)
+    client = _get_client()
+    key = _key(relative_path)
+    try:
+        resp = client.get_object(Bucket=_bucket(), Key=key)
+        return resp["Body"].read()
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+            raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
+        logger.error("cos_service.read_binary: %s — %s", relative_path, e)
+        raise HTTPException(status_code=500, detail="COS read error")
+
+
+def list_folder(relative_path: str) -> list[dict]:
+    """
+    List all non-sidecar files under a workspace folder prefix.
+    Returns the same shape as upload.py's local list_uploads() for drop-in use.
+    Includes extracted=True when a matching .extracted.json sidecar exists in COS.
+    """
+    _validate_relative_path(relative_path)
+    client = _get_client()
+    prefix = _key(relative_path) + "/"
+
+    paginator = client.get_paginator("list_objects_v2")
+    all_objects: dict[str, dict] = {}
+    for page in paginator.paginate(Bucket=_bucket(), Prefix=prefix):
+        for obj in page.get("Contents", []):
+            all_objects[obj["Key"]] = obj
+
+    results: list[dict] = []
+    for key, obj in sorted(all_objects.items(), key=lambda kv: kv[0]):
+        name = key.rsplit("/", 1)[-1]
+        # Skip implicit "folder" markers and extraction sidecars
+        if not name or name.endswith(".extracted.json"):
+            continue
+        rel = _rel_from_key(key)
+        sidecar_key = key + ".extracted.json"
+        extracted = sidecar_key in all_objects
+        results.append({
+            "name": name,
+            "path": rel,
+            "size": obj.get("Size", 0),
+            "modified": obj["LastModified"].timestamp(),
+            "extracted": extracted,
+        })
+
+    logger.debug("cos_service.list_folder: %s — %d files", relative_path, len(results))
+    return results
 
 
 def write_file(relative_path: str, content: str) -> None:

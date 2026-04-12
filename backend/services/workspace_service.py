@@ -70,17 +70,32 @@ def read_file(relative_path: str) -> str:
     if not path.exists() or not path.is_file():
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=415,
+            detail=f"'{relative_path}' is a binary file and cannot be displayed as text.",
+        )
 
 
 def write_file(relative_path: str, content: str) -> None:
     if _use_cos():
         from services import cos_service
-        return cos_service.write_file(relative_path, content)
-    path = resolve_path(relative_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+        cos_service.write_file(relative_path, content)
+    else:
+        path = resolve_path(relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
     logger.info("write_file: %s (%d bytes)", relative_path, len(content))
+
+    # Update embedding index for the written file (no-op when ENABLE_EMBEDDINGS=false)
+    try:
+        from services import embeddings_service
+        embeddings_service.update_file(relative_path, content)
+    except Exception as e:
+        logger.debug("write_file: embeddings update skipped — %s", e)
 
 
 def write_binary(relative_path: str, content: bytes) -> None:
