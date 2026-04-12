@@ -42,8 +42,9 @@ async def upload_file(
     extraction_queued = False
     is_pdf = filename.lower().endswith(".pdf")
     if is_pdf and os.getenv("ENABLE_EXTRACTION", "false").lower() == "true":
-        full_path = str(workspace_service.resolve_path(destination))
-        background_tasks.add_task(extraction_service.extract_document, full_path)
+        # Pass relative destination + content bytes directly so extraction_service
+        # never needs to re-read from disk or COS
+        background_tasks.add_task(extraction_service.extract_document, destination, content)
         extraction_queued = True
         logger.info("extraction queued for: %s", destination)
 
@@ -57,6 +58,16 @@ async def upload_file(
 
 @router.get("/list")
 def list_uploads(folder: str):
+    # COS path — use prefix listing with extracted sidecar detection
+    if workspace_service._use_cos():
+        from services import cos_service
+        try:
+            return cos_service.list_folder(folder)
+        except Exception as e:
+            logger.warning("list_uploads: COS list failed for '%s' — %s", folder, e)
+            return []
+
+    # Local filesystem path
     root = workspace_service._get_root()
     target = workspace_service.resolve_path(folder)
 
@@ -67,7 +78,6 @@ def list_uploads(folder: str):
     for entry in sorted(target.iterdir(), key=lambda p: p.name):
         if not entry.is_file():
             continue
-        # Skip extraction sidecar files from the listing
         if entry.name.endswith(".extracted.json"):
             continue
         extracted = (entry.parent / (entry.name + ".extracted.json")).exists()

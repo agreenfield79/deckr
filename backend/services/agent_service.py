@@ -46,7 +46,7 @@ def run(
         _MAX_CONTEXT_CHARS  = 10_000
         _MAX_HISTORY_CHARS  = 4_000
 
-        context = _load_context(agent["context_folders"])
+        context = _load_context(agent["context_folders"], message)
         if len(context) > _MAX_CONTEXT_CHARS:
             context = (
                 context[:_MAX_CONTEXT_CHARS]
@@ -110,7 +110,7 @@ def run(
 
         return {"reply": reply, "saved_to": effective_path if save_to_workspace else None}
 
-    context = _load_context(agent["context_folders"])
+    context = _load_context(agent["context_folders"], message)
 
     if agent["mode"] == "generate":
         if action_type:
@@ -140,7 +140,7 @@ def run_action_save(
     """Background task: run a single action prompt and save output to workspace."""
     try:
         agent = agent_registry.get_agent(agent_name)
-        context = _load_context(agent["context_folders"])
+        context = _load_context(agent["context_folders"], action_type)
         prompt = _build_action_prompt(action_type, context, "")
         reply = watsonx_client.generate(prompt, agent["model"], {})
         content = _wrap_with_frontmatter(reply, agent_name, save_path)
@@ -156,7 +156,33 @@ def run_action_save(
         )
 
 
-def _load_context(context_folders: list[str]) -> str:
+def _load_context(context_folders: list[str], query: str = "") -> str:
+    """
+    Load workspace context for agent prompts.
+
+    When ENABLE_EMBEDDINGS=true and a query is provided, uses semantic retrieval
+    (embeddings_service) to select the most relevant chunks for that specific query.
+    Falls back to full-file loading when embeddings are disabled or fail.
+    """
+    # Semantic retrieval path — replaces the 10k-char full-context dump
+    if query and os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true":
+        try:
+            from services import embeddings_service
+            ctx = embeddings_service.get_relevant_context(query, context_folders)
+            if ctx and ctx not in (
+                "[No workspace documents found]",
+                "[No relevant workspace documents found]",
+            ):
+                logger.info(
+                    "context: embeddings retrieval succeeded (query_len=%d, context_len=%d)",
+                    len(query), len(ctx),
+                )
+                return ctx
+            logger.info("context: embeddings returned no results — falling back to full load")
+        except Exception as e:
+            logger.warning("context: embeddings retrieval failed (%s) — falling back to full load", e)
+
+    # Full-file loading fallback (original behaviour)
     root = workspace_service._get_root()
     parts: list[str] = []
     file_count = 0

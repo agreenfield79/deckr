@@ -4,6 +4,7 @@ backend/.env.production
 backend/.env.staging
 backend/workspace_root/
 backend/venv/
+backend/.deckr_embeddings.json
 __pycache__/
 *.pyc
 node_modules/
