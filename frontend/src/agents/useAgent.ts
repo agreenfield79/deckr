@@ -1,7 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as agentApi from '../api/agent'
 import { useSession } from '../hooks/useSession'
-import type { AgentInfo, AgentMessage, AgentName, AgentResponse } from '../types/agent'
+import type { AgentInfo, AgentMessage, AgentName, AgentResponse, PipelineEvent, PipelineStepState } from '../types/agent'
+
+// Pipeline sequence mirrors PIPELINE_SEQUENCE in agent_service.py
+const PIPELINE_AGENTS = ['financial', 'risk', 'packaging', 'review']
+const PIPELINE_DISPLAY: Record<string, string> = {
+  financial: 'Financial Analysis Agent',
+  risk:      'SLACR Risk Agent',
+  packaging: 'Packaging Agent',
+  review:    'Review Agent',
+}
 
 export function useAgent() {
   const { sessionId } = useSession()
@@ -10,6 +19,8 @@ export function useAgent() {
   const [messages, setMessages] = useState<AgentMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [runningAgent, setRunningAgent] = useState<string | null>(null)
+  const [isPipelineRunning, setIsPipelineRunning] = useState(false)
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStepState[]>([])
 
   // Keep a ref for messages so callbacks always have the latest value
   const messagesRef = useRef(messages)
@@ -97,7 +108,115 @@ export function useAgent() {
     [sessionId],
   )
 
-  const clearHistory = useCallback(() => setMessages([]), [])
+  const runPipeline = useCallback(async (): Promise<void> => {
+    setIsPipelineRunning(true)
+
+    // Initialise all steps as pending
+    const initialSteps: PipelineStepState[] = PIPELINE_AGENTS.map((agent) => ({
+      agent,
+      display_name: PIPELINE_DISPLAY[agent] ?? agent,
+      status: 'pending',
+    }))
+    setPipelineSteps(initialSteps)
+
+    // Announce pipeline start in chat
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'agent',
+        content: '▶ Running full analysis pipeline…',
+        agent_name: 'packaging' as AgentName,
+        timestamp: Date.now(),
+      },
+    ])
+
+    try {
+      await agentApi.runPipeline(sessionId, (event: PipelineEvent) => {
+        if (event.type === 'step_start' && event.agent) {
+          setPipelineSteps((prev) =>
+            prev.map((s) =>
+              s.agent === event.agent ? { ...s, status: 'running' } : s,
+            ),
+          )
+        } else if (event.type === 'step_done' && event.agent) {
+          setPipelineSteps((prev) =>
+            prev.map((s) =>
+              s.agent === event.agent
+                ? { ...s, status: 'done', saved_to: event.saved_to, elapsed_ms: event.elapsed_ms }
+                : s,
+            ),
+          )
+          // Add a brief completion note per step
+          const display = PIPELINE_DISPLAY[event.agent] ?? event.agent
+          const savedNote = event.saved_to ? ` → saved to \`${event.saved_to}\`` : ''
+          const msNote = event.elapsed_ms ? ` (${(event.elapsed_ms / 1000).toFixed(1)}s)` : ''
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'agent',
+              content: `✓ ${display} complete${savedNote}${msNote}`,
+              agent_name: event.agent as AgentName,
+              saved_to: event.saved_to ?? undefined,
+              timestamp: Date.now(),
+            },
+          ])
+        } else if (event.type === 'step_error' && event.agent) {
+          setPipelineSteps((prev) =>
+            prev.map((s) =>
+              s.agent === event.agent
+                ? { ...s, status: 'error', error: event.error }
+                : s,
+            ),
+          )
+          const display = PIPELINE_DISPLAY[event.agent] ?? event.agent
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'agent',
+              content: `⚠️ ${display} failed — ${event.error ?? 'unknown error'}`,
+              agent_name: event.agent as AgentName,
+              timestamp: Date.now(),
+            },
+          ])
+        } else if (event.type === 'pipeline_complete') {
+          const totalSec = event.total_elapsed_ms
+            ? ` in ${(event.total_elapsed_ms / 1000).toFixed(0)}s`
+            : ''
+          const failNote =
+            (event.steps_failed ?? 0) > 0
+              ? ` (${event.steps_failed} step(s) failed)`
+              : ''
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'agent',
+              content: `✅ Pipeline complete — ${event.steps_done ?? 0}/${event.steps_done! + (event.steps_failed ?? 0)} steps succeeded${totalSec}${failNote}`,
+              agent_name: 'packaging' as AgentName,
+              timestamp: Date.now(),
+            },
+          ])
+        }
+      })
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'Pipeline failed.'
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'agent',
+          content: `⚠️ Pipeline error — ${detail}`,
+          agent_name: 'packaging' as AgentName,
+          timestamp: Date.now(),
+        },
+      ])
+    } finally {
+      setIsPipelineRunning(false)
+    }
+  }, [sessionId])
+
+  const clearHistory = useCallback(() => {
+    setMessages([])
+    setPipelineSteps([])
+  }, [])
 
   return {
     agents,
@@ -109,6 +228,9 @@ export function useAgent() {
     sessionId,
     sendMessage,
     runAgent,
+    runPipeline,
+    isPipelineRunning,
+    pipelineSteps,
     clearHistory,
   }
 }

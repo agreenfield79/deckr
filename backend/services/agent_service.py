@@ -1,5 +1,7 @@
+import json
 import logging
 import os
+import time
 from datetime import date
 from pathlib import Path
 
@@ -7,6 +9,9 @@ from services import agent_registry, orchestrate_client, watsonx_client, workspa
 from services.extraction_service import get_extracted_text
 
 logger = logging.getLogger("deckr.agent_service")
+
+# Agents executed in order by run_pipeline_stream()
+PIPELINE_SEQUENCE = ["financial", "risk", "packaging", "review"]
 
 
 def run(
@@ -244,3 +249,123 @@ def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> s
         f"---\n\n"
     )
     return frontmatter + content
+
+
+# ---------------------------------------------------------------------------
+# Pipeline runner — Step 13.1
+# ---------------------------------------------------------------------------
+
+# Default run prompts for each pipeline step
+_PIPELINE_PROMPTS: dict[str, str] = {
+    "financial": (
+        "Run Financial Analysis Agent — generate a comprehensive financial analysis of all "
+        "uploaded documents including leverage, liquidity, collateral, and guarantor review."
+    ),
+    "risk": (
+        "Run SLACR Risk Agent — score this deal using the SLACR framework, produce a risk "
+        "narrative, and incorporate the financial analysis already saved to the workspace."
+    ),
+    "packaging": (
+        "Run Packaging Agent — assemble the full credit memorandum using the financial analysis, "
+        "SLACR risk narrative, and all uploaded borrower documents in the workspace."
+    ),
+    "review": (
+        "Run Review Agent — review the complete credit package in the Deck folder for accuracy, "
+        "completeness, and compliance; flag any gaps or inconsistencies."
+    ),
+}
+
+
+def run_pipeline_stream(session_id: str, message: str = ""):
+    """
+    Generator that runs agents in sequence (Financial → Risk → Packaging → Review)
+    and yields NDJSON progress events for FastAPI StreamingResponse.
+
+    Event types:
+      {"type": "pipeline_start", "total": 4}
+      {"type": "step_start",  "agent": str, "display_name": str, "step": int, "total": int}
+      {"type": "step_done",   "agent": str, "step": int, "saved_to": str|None, "elapsed_ms": int, "reply_preview": str}
+      {"type": "step_error",  "agent": str, "step": int, "error": str, "elapsed_ms": int}
+      {"type": "pipeline_complete", "steps_done": int, "steps_failed": int, "total_elapsed_ms": int}
+    """
+    total = len(PIPELINE_SEQUENCE)
+    pipeline_start = time.time()
+    steps_done = 0
+    steps_failed = 0
+
+    yield json.dumps({"type": "pipeline_start", "total": total}) + "\n"
+    logger.info("agent_service.run_pipeline_stream: started session=%s", session_id)
+
+    for i, agent_name in enumerate(PIPELINE_SEQUENCE):
+        step_num = i + 1
+        agent_cfg = agent_registry.get_agent(agent_name)
+        display_name = agent_cfg["display_name"]
+
+        yield json.dumps({
+            "type": "step_start",
+            "agent": agent_name,
+            "display_name": display_name,
+            "step": step_num,
+            "total": total,
+        }) + "\n"
+        logger.info(
+            "agent_service.run_pipeline_stream: step %d/%d agent=%s session=%s",
+            step_num, total, agent_name, session_id,
+        )
+
+        step_start = time.time()
+        try:
+            prompt = message or _PIPELINE_PROMPTS.get(
+                agent_name,
+                f"Run {display_name} — generate comprehensive analysis.",
+            )
+            result = run(
+                agent_name=agent_name,
+                message=prompt,
+                session_id=session_id,
+                messages=[],        # standalone call — no conversation history
+                save_to_workspace=True,
+                save_path=None,
+            )
+            elapsed = int((time.time() - step_start) * 1000)
+            reply_preview = (result["reply"] or "")[:200].replace("\n", " ")
+            steps_done += 1
+            logger.info(
+                "agent_service.run_pipeline_stream: step %d done agent=%s elapsed=%dms saved_to=%s",
+                step_num, agent_name, elapsed, result.get("saved_to"),
+            )
+            yield json.dumps({
+                "type": "step_done",
+                "agent": agent_name,
+                "step": step_num,
+                "saved_to": result.get("saved_to"),
+                "elapsed_ms": elapsed,
+                "reply_preview": reply_preview,
+            }) + "\n"
+
+        except Exception as exc:
+            elapsed = int((time.time() - step_start) * 1000)
+            steps_failed += 1
+            logger.error(
+                "agent_service.run_pipeline_stream: step %d failed agent=%s — %s",
+                step_num, agent_name, exc,
+            )
+            yield json.dumps({
+                "type": "step_error",
+                "agent": agent_name,
+                "step": step_num,
+                "error": str(exc),
+                "elapsed_ms": elapsed,
+            }) + "\n"
+
+    total_elapsed = int((time.time() - pipeline_start) * 1000)
+    logger.info(
+        "agent_service.run_pipeline_stream: complete session=%s done=%d failed=%d elapsed=%dms",
+        session_id, steps_done, steps_failed, total_elapsed,
+    )
+    yield json.dumps({
+        "type": "pipeline_complete",
+        "steps_done": steps_done,
+        "steps_failed": steps_failed,
+        "total_elapsed_ms": total_elapsed,
+    }) + "\n"

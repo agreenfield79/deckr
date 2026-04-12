@@ -20,6 +20,9 @@ export default function AgentPanel() {
     runningAgent,
     sendMessage,
     runAgent,
+    runPipeline,
+    isPipelineRunning,
+    pipelineSteps,
     clearHistory,
   } = useAgent()
 
@@ -66,6 +69,11 @@ export default function AgentPanel() {
     } else if (res?.saved_to) {
       toastSuccess(`Saved to ${res.saved_to}`)
     }
+  }
+
+  const handleRunPipeline = async () => {
+    await runPipeline()
+    await refreshTree()
   }
 
   const handleSaveToWorkspace = async (content: string, agentName: string) => {
@@ -165,6 +173,9 @@ export default function AgentPanel() {
           agents={agents}
           runningAgent={runningAgent}
           onRun={handleRunAgent}
+          isPipelineRunning={isPipelineRunning}
+          pipelineSteps={pipelineSteps}
+          onRunPipeline={handleRunPipeline}
         />
       </div>
 
@@ -180,11 +191,11 @@ export default function AgentPanel() {
             rows={1}
             className="flex-1 text-xs text-[#161616] bg-transparent resize-none outline-none leading-relaxed placeholder:text-[#a8a8a8] max-h-32 overflow-y-auto"
             style={{ fieldSizing: 'content' } as React.CSSProperties}
-            disabled={isLoading || !!runningAgent}
+            disabled={isLoading || !!runningAgent || isPipelineRunning}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading || !!runningAgent}
+            disabled={!input.trim() || isLoading || !!runningAgent || isPipelineRunning}
             className="shrink-0 p-1 text-[#0f62fe] hover:text-[#0043ce] disabled:text-[#c6c6c6] transition-colors"
             title="Send message"
           >

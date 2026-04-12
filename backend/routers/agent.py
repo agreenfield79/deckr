@@ -2,8 +2,9 @@ import logging
 import re
 
 from fastapi import APIRouter, BackgroundTasks
+from fastapi.responses import StreamingResponse
 
-from models.agent import AgentRequest, AgentResponse
+from models.agent import AgentRequest, AgentResponse, PipelineRequest
 from models.slacr import SlacrInput
 from services import agent_registry, agent_service, slacr_service, workspace_service
 
@@ -43,6 +44,20 @@ def get_registry():
         sum(1 for a in static if a.get("orchestrate_live")),
     )
     return static
+
+
+@router.post("/pipeline")
+def run_pipeline(body: PipelineRequest) -> StreamingResponse:
+    """
+    Run the full analysis pipeline: Financial → Risk → Packaging → Review.
+    Returns an NDJSON stream of progress events so the frontend can update
+    progressively without waiting for all four agents to complete.
+    """
+    logger.info("POST /agent/pipeline session=%s", body.session_id)
+    return StreamingResponse(
+        agent_service.run_pipeline_stream(body.session_id, body.message),
+        media_type="application/x-ndjson",
+    )
 
 
 @router.post("/{agent_name}")

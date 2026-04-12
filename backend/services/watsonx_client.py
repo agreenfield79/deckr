@@ -112,3 +112,51 @@ def generate(prompt: str, model_key: str, params: dict) -> str:
             status_code=502,
             detail="AI service temporarily unavailable. Please try again.",
         )
+
+
+def generate_stream(prompt: str, model_key: str, params: dict):
+    """
+    Stream text generation token-by-token via the ibm-watsonx-ai SDK.
+    Uses ModelInference.generate_text_stream() which returns a generator of text chunks.
+    Falls back gracefully if the SDK is unavailable.
+
+    Intended use: wrap in FastAPI StreamingResponse for real-time output,
+    e.g. for the pipeline endpoint when USE_ORCHESTRATE=false.
+    """
+    api_key = os.getenv("IBMCLOUD_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="IBMCLOUD_API_KEY not configured")
+
+    try:
+        from ibm_watsonx_ai import Credentials
+        from ibm_watsonx_ai.foundation_models import ModelInference
+    except ImportError:
+        logger.error("watsonx.generate_stream: ibm-watsonx-ai SDK not installed — run pip install ibm-watsonx-ai")
+        raise HTTPException(
+            status_code=500,
+            detail="Streaming SDK not installed. Run: pip install ibm-watsonx-ai",
+        )
+
+    max_new_tokens = params.get("max_new_tokens", 1500)
+    t0 = time.time()
+    try:
+        model = ModelInference(
+            model_id=_resolve_model(model_key),
+            credentials=Credentials(api_key=api_key, url=_base_url()),
+            project_id=_project_id(),
+            params={"max_new_tokens": max_new_tokens},
+        )
+        logger.info("watsonx.generate_stream: model=%s max_tokens=%d (streaming)", model_key, max_new_tokens)
+        for chunk in model.generate_text_stream(prompt=prompt):
+            yield chunk
+        elapsed = int((time.time() - t0) * 1000)
+        logger.info("watsonx.generate_stream: complete model=%s elapsed=%dms", model_key, elapsed)
+    except HTTPException:
+        raise
+    except Exception as e:
+        elapsed = int((time.time() - t0) * 1000)
+        logger.error("watsonx.generate_stream: upstream error — %s elapsed=%dms", type(e).__name__, elapsed)
+        raise HTTPException(
+            status_code=502,
+            detail="AI streaming service temporarily unavailable. Please try again.",
+        )
