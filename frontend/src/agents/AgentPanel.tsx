@@ -6,6 +6,7 @@ import AgentMessageItem from './AgentMessage'
 import AgentActions from './AgentActions'
 import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
+import { getHealth } from '../api/health'
 
 export default function AgentPanel() {
   const { refreshTree, writeFile } = useProject()
@@ -23,8 +24,18 @@ export default function AgentPanel() {
   } = useAgent()
 
   const [input, setInput] = useState('')
+  const [orchestrateActive, setOrchestrateActive] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Check health on mount to determine if Orchestrate memory is active
+  useEffect(() => {
+    getHealth()
+      .then((h) => {
+        setOrchestrateActive(h.config?.USE_ORCHESTRATE === 'true')
+      })
+      .catch(() => {/* offline — memory stays inactive */})
+  }, [])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -81,12 +92,16 @@ export default function AgentPanel() {
           Agent Panel
         </span>
         <div className="flex items-center gap-2">
-          {/* Memory status indicator — inactive until Phase 12 */}
+          {/* Memory status indicator — reflects live Orchestrate state */}
           <span
-            title="Memory inactive — activates in Phase 12"
-            className="text-[10px] text-[#a8a8a8] bg-[#e0e0e0] px-1.5 py-0.5 rounded font-mono cursor-default"
+            title={orchestrateActive ? 'Memory active — IBM watsonx Orchestrate' : 'Memory inactive — activates when USE_ORCHESTRATE=true'}
+            className={`text-[10px] px-1.5 py-0.5 rounded font-mono cursor-default transition-colors ${
+              orchestrateActive
+                ? 'text-[#198038] bg-[#defbe6]'
+                : 'text-[#a8a8a8] bg-[#e0e0e0]'
+            }`}
           >
-            Memory ○
+            {orchestrateActive ? 'Memory ●' : 'Memory ○'}
           </span>
           <button
             onClick={clearHistory}

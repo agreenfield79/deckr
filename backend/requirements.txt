@@ -3,4 +3,6 @@ uvicorn[standard]
 python-dotenv
 requests
 python-multipart
-# ibm-watsonx-orchestrate-adk  # Uncomment for Phase 12 Orchestrate integration
+# Phase 12 note: Orchestrate runtime invocation uses `requests` (already listed above).
+# The ADK CLI (`pip install ibm-watsonx-orchestrate`) is a dev-machine tool for importing
+# agents into Orchestrate — it is NOT a runtime dependency and does NOT belong here.

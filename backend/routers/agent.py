@@ -14,8 +14,35 @@ router = APIRouter()
 
 @router.get("/registry")
 def get_registry():
-    """Return all agent display names and capabilities."""
-    return agent_registry.list_agents()
+    """Return all agent display names and capabilities.
+    When USE_ORCHESTRATE=true, merges static registry with live Orchestrate agent list
+    to annotate which agents are confirmed live in the Orchestrate instance.
+    """
+    import os
+    static = agent_registry.list_agents()
+
+    if os.getenv("USE_ORCHESTRATE", "false").lower() != "true":
+        return static
+
+    # Fetch live Orchestrate agents — falls back to [] on any error
+    from services import orchestrate_client as oc
+    live_agents = oc.list_agents()
+    # Build a set of live agent names for fast lookup (Orchestrate uses display names)
+    live_names = {a.get("name", "").lower() for a in live_agents}
+    live_names |= {a.get("display_name", "").lower() for a in live_agents}
+
+    # Annotate each static agent with orchestrate_live status
+    for agent in static:
+        display = agent.get("display_name", "").lower()
+        name = agent.get("name", "").lower()
+        agent["orchestrate_live"] = display in live_names or name in live_names
+
+    logger.info(
+        "registry: %d agents returned (%d confirmed live in Orchestrate)",
+        len(static),
+        sum(1 for a in static if a.get("orchestrate_live")),
+    )
+    return static
 
 
 @router.post("/{agent_name}")

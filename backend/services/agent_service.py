@@ -27,7 +27,39 @@ def run(
     )
 
     if use_orchestrate:
-        return orchestrate_client.invoke_agent(agent_name, message, session_id)
+        # Load workspace context — Orchestrate agents have no filesystem access,
+        # so we assemble context here and inject it into the message payload.
+        # Cap at 15,000 chars to prevent 500 errors from oversized API payloads.
+        _MAX_CONTEXT_CHARS = 15_000
+        context = _load_context(agent["context_folders"])
+        if len(context) > _MAX_CONTEXT_CHARS:
+            context = (
+                context[:_MAX_CONTEXT_CHARS]
+                + "\n\n[... workspace context truncated to fit API payload limit ...]"
+            )
+            logger.warning(
+                "agent_service: context truncated to %d chars for Orchestrate payload (agent=%s)",
+                _MAX_CONTEXT_CHARS, agent_name,
+            )
+        if context and context != "[No workspace documents found]":
+            full_message = (
+                f"--- WORKSPACE CONTEXT ---\n{context}\n\n"
+                f"--- REQUEST ---\n{message}"
+            )
+        else:
+            full_message = message
+
+        result = orchestrate_client.invoke_agent(agent_name, full_message, session_id)
+        reply = result["reply"]
+
+        # Save output to workspace with frontmatter — same behaviour as watsonx path
+        effective_path = save_path or (agent["output_path"] if save_to_workspace else None)
+        if save_to_workspace and effective_path:
+            content = _wrap_with_frontmatter(reply, agent_name, effective_path)
+            workspace_service.write_file(effective_path, content)
+            logger.info("agent_service: output saved to %s (via orchestrate)", effective_path)
+
+        return {"reply": reply, "saved_to": effective_path if save_to_workspace else None}
 
     context = _load_context(agent["context_folders"])
 

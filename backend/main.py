@@ -26,6 +26,7 @@ from routers import agent, workspace, forms, upload, deck, status, risk
 
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
+_ORCHESTRATE_CRED_KEYS = {"ORCHESTRATE_API_KEY"}
 _FLAG_KEYS       = {"USE_ORCHESTRATE", "ENABLE_EXTRACTION"}
 _PATH_KEYS       = {"WORKSPACE_ROOT"}
 
@@ -38,6 +39,13 @@ def _config_status() -> dict:
         result[key] = os.getenv(key, "false")
     for key in sorted(_PATH_KEYS):
         result[key] = os.getenv(key, "(not set)")
+    # Orchestrate — only surfaced when USE_ORCHESTRATE is true
+    if os.getenv("USE_ORCHESTRATE", "false").lower() == "true":
+        result["ORCHESTRATE_BASE_URL"] = os.getenv("ORCHESTRATE_BASE_URL", "missing")
+        result["ORCHESTRATE_API_KEY"] = "set" if os.getenv("ORCHESTRATE_API_KEY") else "missing"
+        from services.orchestrate_client import configured_agent_ids
+        ids = configured_agent_ids()
+        result["ORCHESTRATE_AGENTS_CONFIGURED"] = f"{sum(bool(v) for v in ids.values())}/{len(ids)}"
     return result
 
 
@@ -50,6 +58,15 @@ async def lifespan(app: FastAPI):
     for key in sorted(_FLAG_KEYS):
         logger.info("  %-28s %s", key, os.getenv(key, "false"))
     logger.info("  %-28s %s", "WORKSPACE_ROOT", os.getenv("WORKSPACE_ROOT", "(not set)"))
+    # Log Orchestrate config when active
+    use_orchestrate = os.getenv("USE_ORCHESTRATE", "false").lower() == "true"
+    if use_orchestrate:
+        logger.info("  Orchestrate integration ACTIVE")
+        logger.info("  %-28s %s", "ORCHESTRATE_BASE_URL", os.getenv("ORCHESTRATE_BASE_URL", "✗ MISSING"))
+        logger.info("  %-28s %s", "ORCHESTRATE_API_KEY", "✓ set" if os.getenv("ORCHESTRATE_API_KEY") else "✗ MISSING")
+        from services.orchestrate_client import configured_agent_ids
+        for agent_name, is_set in configured_agent_ids().items():
+            logger.info("  %-28s %s", f"  agent:{agent_name}", "✓ configured" if is_set else "✗ missing")
     logger.info("Deckr API ready — http://localhost:8000/api/health")
     yield
     logger.info("Deckr API shutting down")

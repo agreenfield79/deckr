@@ -41,13 +41,20 @@ AGENTS: dict[str, dict] = {
         "conversational":  True,
     },
     "coordination": {
+        # NOTE: The original gap-checker role for this agent is superseded by
+        # status_service.py + StatusTab (deterministic, no AI needed).
+        # This entry is reserved for the future Lender RFP Coordination Agent —
+        # a multi-party agent that distributes deal packages, tracks lender
+        # responses, and compares competing term sheets during syndication.
+        # NOT deployed in Orchestrate. Requires Phase 13 tool calling + external
+        # communication tools before it can be activated.
         "display_name":    "Coordination Agent",
         "system_prompt":   "prompts/coordination_agent.txt",
         "context_folders": ["all"],
         "output_path":     "Agent Notes/coordination_notes.md",
         "model":           "granite",
         "mode":            "generate",
-        "conversational":  False,  # stub — auto-invoked only
+        "conversational":  False,  # future phase — disabled in UI
     },
     "review": {
         "display_name":    "Review Agent",
