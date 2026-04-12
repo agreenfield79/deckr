@@ -11,6 +11,10 @@ logger = logging.getLogger("deckr.workspace_service")
 _WORKSPACE_ROOT: str = os.getenv("WORKSPACE_ROOT", "./workspace_root/projects/default")
 
 
+def _use_cos() -> bool:
+    return os.getenv("USE_COS", "false").lower() == "true"
+
+
 def _get_root() -> Path:
     root = Path(_WORKSPACE_ROOT).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -45,6 +49,9 @@ def _build_node(path: Path, root: Path) -> dict:
 
 
 def list_tree() -> dict:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.list_tree()
     root = _get_root()
     items = sorted(
         [_build_node(child, root) for child in root.iterdir()],
@@ -56,6 +63,9 @@ def list_tree() -> dict:
 
 
 def read_file(relative_path: str) -> str:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.read_file(relative_path)
     path = resolve_path(relative_path)
     if not path.exists() or not path.is_file():
         from fastapi import HTTPException
@@ -64,6 +74,9 @@ def read_file(relative_path: str) -> str:
 
 
 def write_file(relative_path: str, content: str) -> None:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.write_file(relative_path, content)
     path = resolve_path(relative_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -71,6 +84,9 @@ def write_file(relative_path: str, content: str) -> None:
 
 
 def write_binary(relative_path: str, content: bytes) -> None:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.write_binary(relative_path, content)
     path = resolve_path(relative_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
@@ -78,6 +94,9 @@ def write_binary(relative_path: str, content: bytes) -> None:
 
 
 def delete_file(relative_path: str) -> None:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.delete_file(relative_path)
     path = resolve_path(relative_path)
     if not path.exists():
         from fastapi import HTTPException
@@ -87,12 +106,18 @@ def delete_file(relative_path: str) -> None:
 
 
 def create_folder(relative_path: str) -> None:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.create_folder(relative_path)
     path = resolve_path(relative_path)
     path.mkdir(parents=True, exist_ok=True)
     logger.info("create_folder: %s", relative_path)
 
 
 def rename_file(old_path: str, new_path: str) -> None:
+    if _use_cos():
+        from services import cos_service
+        return cos_service.rename_file(old_path, new_path)
     src = resolve_path(old_path)
     dst = resolve_path(new_path)
     if not src.exists():

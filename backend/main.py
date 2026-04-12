@@ -27,7 +27,7 @@ from routers import agent, workspace, forms, upload, deck, status, risk
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
 _ORCHESTRATE_CRED_KEYS = {"ORCHESTRATE_API_KEY"}
-_FLAG_KEYS       = {"USE_ORCHESTRATE", "ENABLE_EXTRACTION"}
+_FLAG_KEYS       = {"USE_ORCHESTRATE", "ENABLE_EXTRACTION", "USE_COS"}
 _PATH_KEYS       = {"WORKSPACE_ROOT"}
 
 
@@ -46,6 +46,12 @@ def _config_status() -> dict:
         from services.orchestrate_client import configured_agent_ids
         ids = configured_agent_ids()
         result["ORCHESTRATE_AGENTS_CONFIGURED"] = f"{sum(bool(v) for v in ids.values())}/{len(ids)}"
+    # COS — only surfaced when USE_COS is true
+    if os.getenv("USE_COS", "false").lower() == "true":
+        result["COS_ENDPOINT_URL"] = os.getenv("COS_ENDPOINT_URL", "missing")
+        result["COS_BUCKET_NAME"]  = os.getenv("COS_BUCKET_NAME", "missing")
+        result["COS_API_KEY"]      = "set" if os.getenv("COS_API_KEY") else "missing"
+        result["COS_INSTANCE_CRN"] = "set" if os.getenv("COS_INSTANCE_CRN") else "missing"
     return result
 
 
@@ -67,6 +73,17 @@ async def lifespan(app: FastAPI):
         from services.orchestrate_client import configured_agent_ids
         for agent_name, is_set in configured_agent_ids().items():
             logger.info("  %-28s %s", f"  agent:{agent_name}", "✓ configured" if is_set else "✗ missing")
+    logger.info("Deckr API ready — http://localhost:8000/api/health")
+    # Log COS config when active
+    use_cos = os.getenv("USE_COS", "false").lower() == "true"
+    if use_cos:
+        logger.info("  COS storage ACTIVE")
+        logger.info("  %-28s %s", "COS_ENDPOINT_URL", os.getenv("COS_ENDPOINT_URL", "✗ MISSING"))
+        logger.info("  %-28s %s", "COS_BUCKET_NAME",  os.getenv("COS_BUCKET_NAME", "✗ MISSING"))
+        logger.info("  %-28s %s", "COS_API_KEY",      "✓ set" if os.getenv("COS_API_KEY") else "✗ MISSING")
+        logger.info("  %-28s %s", "COS_INSTANCE_CRN", "✓ set" if os.getenv("COS_INSTANCE_CRN") else "✗ MISSING")
+    else:
+        logger.info("  COS storage INACTIVE — using local filesystem (USE_COS=false)")
     logger.info("Deckr API ready — http://localhost:8000/api/health")
     yield
     logger.info("Deckr API shutting down")

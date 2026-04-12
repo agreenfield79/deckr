@@ -3,6 +3,7 @@ uvicorn[standard]
 python-dotenv
 requests
 python-multipart
+ibm-cos-sdk          # Step 12.7 — IBM Cloud Object Storage adapter
 # Phase 12 note: Orchestrate runtime invocation uses `requests` (already listed above).
 # The ADK CLI (`pip install ibm-watsonx-orchestrate`) is a dev-machine tool for importing
 # agents into Orchestrate — it is NOT a runtime dependency and does NOT belong here.
