@@ -33,18 +33,20 @@ def _get_base_url() -> str:
     return url.rstrip("/")
 
 
-def invoke_agent(agent_name: str, message: str, session_id: str) -> dict:
+def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict:
     """
     Invoke a deployed Orchestrate agent via REST API.
 
     REST endpoint:
-        POST {ORCHESTRATE_BASE_URL}/api/v1/orchestrate/{agent_id}/chat/completions
+        POST {ORCHESTRATE_BASE_URL}/v1/orchestrate/{agent_id}/chat/completions
 
-    Memory: X-IBM-THREAD-ID = session_id activates per-session conversation memory
-    in Orchestrate automatically — no additional configuration required.
+    Messages: full conversation history built by agent_service — context in first
+    message, prior turns included, current message appended. This is more reliable
+    than relying solely on X-IBM-THREAD-ID server-side thread memory.
 
-    The message payload already includes workspace context assembled by agent_service.
-    Orchestrate agents do not have direct filesystem access.
+    Memory: X-IBM-THREAD-ID = session_id is still sent for any supplemental
+    server-side memory, but conversation continuity is ensured by the explicit
+    messages array.
     """
     agent_id = _AGENT_ID_MAP.get(agent_name)
     if not agent_id:
@@ -67,7 +69,7 @@ def invoke_agent(agent_name: str, message: str, session_id: str) -> dict:
             "Content-Type": "application/json",
         }
         payload = {
-            "messages": [{"role": "human", "content": message}],
+            "messages": messages,
             "stream": False,
         }
 

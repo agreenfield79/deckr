@@ -27,29 +27,73 @@ def run(
     )
 
     if use_orchestrate:
-        # Load workspace context — Orchestrate agents have no filesystem access,
-        # so we assemble context here and inject it into the message payload.
-        # Cap at 15,000 chars to prevent 500 errors from oversized API payloads.
-        _MAX_CONTEXT_CHARS = 15_000
+        # Orchestrate's chat/completions API processes only the last message in the
+        # messages array as the current user query — it does not use prior array items
+        # for conversation continuity the way OpenAI-compatible APIs do.
+        # X-IBM-THREAD-ID server-side memory is also unreliable across sessions.
+        #
+        # Solution: pack everything into a SINGLE human message:
+        #   1. Workspace context (capped at 10,000 chars)
+        #   2. Prior conversation turns formatted as inline text (capped at 4,000 chars)
+        #   3. Current user request
+        #
+        # This is session-agnostic and guaranteed to work regardless of API memory behavior.
+        _MAX_CONTEXT_CHARS  = 10_000
+        _MAX_HISTORY_CHARS  = 4_000
+
         context = _load_context(agent["context_folders"])
         if len(context) > _MAX_CONTEXT_CHARS:
             context = (
                 context[:_MAX_CONTEXT_CHARS]
-                + "\n\n[... workspace context truncated to fit API payload limit ...]"
+                + "\n\n[... workspace context truncated ...]"
             )
             logger.warning(
                 "agent_service: context truncated to %d chars for Orchestrate payload (agent=%s)",
                 _MAX_CONTEXT_CHARS, agent_name,
             )
-        if context and context != "[No workspace documents found]":
-            full_message = (
-                f"--- WORKSPACE CONTEXT ---\n{context}\n\n"
-                f"--- REQUEST ---\n{message}"
-            )
-        else:
-            full_message = message
+        has_context = bool(context and context != "[No workspace documents found]")
 
-        result = orchestrate_client.invoke_agent(agent_name, full_message, session_id)
+        # Build prior conversation block from messages (exclude last item = current message)
+        prior_turns = messages[:-1] if messages else []
+        history_block = ""
+        if prior_turns:
+            lines: list[str] = []
+            for m in prior_turns:
+                role_label = "User" if m.get("role") == "user" else "Assistant"
+                content = m.get("content", "")
+                # Truncate very long agent replies to keep the block manageable
+                if role_label == "Assistant" and len(content) > 800:
+                    content = content[:800] + "\n[... reply truncated ...]"
+                lines.append(f"{role_label}: {content}")
+            raw_history = "\n\n".join(lines)
+            if len(raw_history) > _MAX_HISTORY_CHARS:
+                raw_history = raw_history[-_MAX_HISTORY_CHARS:] + "\n[... earlier turns omitted ...]"
+            history_block = f"\n\n--- PRIOR CONVERSATION ---\n{raw_history}"
+            logger.info(
+                "agent_service: %d prior turns included in Orchestrate payload (agent=%s)",
+                len(prior_turns), agent_name,
+            )
+
+        # Assemble the single message
+        parts: list[str] = []
+        if has_context:
+            parts.append(f"--- WORKSPACE CONTEXT ---\n{context}")
+        if history_block:
+            parts.append(history_block.strip())
+        parts.append(f"--- CURRENT REQUEST ---\n{message}")
+        full_message = "\n\n".join(parts)
+
+        orchestrate_messages = [{"role": "human", "content": full_message}]
+        logger.info(
+            "agent_service: single-message payload built for Orchestrate — "
+            "context=%s prior_turns=%d current_msg_len=%d (agent=%s)",
+            "yes" if has_context else "no",
+            len(prior_turns),
+            len(message),
+            agent_name,
+        )
+
+        result = orchestrate_client.invoke_agent(agent_name, orchestrate_messages, session_id)
         reply = result["reply"]
 
         # Save output to workspace with frontmatter — same behaviour as watsonx path
