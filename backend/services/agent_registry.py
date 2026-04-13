@@ -5,6 +5,24 @@ from fastapi import HTTPException
 logger = logging.getLogger("deckr.agent_registry")
 
 AGENTS: dict[str, dict] = {
+    "guarantor": {
+        "display_name":    "Guarantor Agent",
+        "system_prompt":   "prompts/guarantor_agent.txt",
+        # Personal financial documents live in Guarantors/; Tax Returns/ holds
+        # both business and personal returns (agent prompt filters for personal only).
+        # Agent Notes/ is omitted — prior agent notes contain business-entity data
+        # that would contaminate the embeddings seed for personal guarantor analysis.
+        "context_folders": ["Guarantors/", "Tax Returns/"],
+        "output_path":     "Agent Notes/guarantor_analysis.md",
+        "model":           "granite",
+        "mode":            "generate",
+        "conversational":  False,
+        # Agent calls save_to_workspace via Orchestrate (saves full guarantor_analysis.md),
+        # then returns a brief confirmation as reply.
+        # orchestrate_tool_save=True suppresses backend auto-save so the brief
+        # confirmation does not overwrite the full content the tool already wrote.
+        "orchestrate_tool_save": True,
+    },
     "collateral": {
         "display_name":    "Collateral Agent",
         "system_prompt":   "prompts/collateral_agent.txt",

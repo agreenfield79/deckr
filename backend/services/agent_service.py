@@ -37,7 +37,7 @@ logger = logging.getLogger("deckr.agent_service")
 # — one line change here; no other code changes required.
 PIPELINE_STAGES: list[list[str]] = [
     ["extraction"],
-    ["financial", "industry", "collateral"],   # parallel isolated threads (Phase 22: + guarantor)
+    ["financial", "industry", "collateral", "guarantor"],   # parallel isolated threads — final pipeline shape
     ["risk"],
     ["packaging"],
     ["review"],
@@ -789,6 +789,11 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "Run Collateral Agent — analyze all uploaded collateral documents, calculate LTV and lien "
         "positions, supplement with market comparables where appraisals are absent, and save a "
         "complete collateral schedule and narrative to Agent Notes/collateral_analysis.md."
+    ),
+    "guarantor": (
+        "Run Guarantor Agent — analyze all uploaded guarantor financial documents, perform an "
+        "online background check on each guarantor, calculate net worth, liquidity, and guarantee "
+        "coverage ratios, and save a complete per-guarantor analysis to Agent Notes/guarantor_analysis.md."
     ),
     "financial": (
         "Run Financial Analysis Agent — generate a comprehensive financial analysis of all "

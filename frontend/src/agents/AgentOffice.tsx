@@ -18,13 +18,15 @@ const EXTRACTION_CARD: AgentCard = {
   key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
 }
 
-// Analytical pipeline cards — rendered in a 3-column grid (Phase 21: 6 cards = 2×3).
-// Layout will be redesigned in Phase 22.5 when all 8 pipeline agents are present.
-// Parallel analysis agents (financial, industry, collateral) are grouped in the first two rows.
+// Analytical pipeline cards — rendered in a 4-column grid (Phase 22: 7 cards).
+// Row 1 (parallel analysis stage): Financial | Industry | Collateral | Guarantor
+// Row 2 (sequential post-analysis): Risk | Packaging | Review | (empty)
+// This grouping makes the parallel/sequential pipeline stages visually apparent.
 const AGENT_CARDS: AgentCard[] = [
   { key: 'financial',  label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
   { key: 'industry',   label: 'Industry',   abbr: 'In',  activeColor: 'ring-[#198038] bg-[#defbe6]' },
   { key: 'collateral', label: 'Collateral', abbr: 'Co',  activeColor: 'ring-[#9f1853] bg-[#fff0f7]' },
+  { key: 'guarantor',  label: 'Guarantor',  abbr: 'G',   activeColor: 'ring-[#b28600] bg-[#fdf6dd]' },
   { key: 'risk',       label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
   { key: 'packaging',  label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
   { key: 'review',     label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
@@ -188,11 +190,11 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
             />
           </div>
 
-          {/* Analysis — 3-column grid (Phase 20+; redesigned at Phase 22.5) */}
+          {/* Analysis — 4-column grid: [Financial | Industry | Collateral | Guarantor] then [Risk | Packaging | Review] */}
           <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mb-1 px-0.5">
             Analysis
           </p>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             {AGENT_CARDS.map((card) => {
               const activity = agentActivity[card.key]
               const pipelineStep = pipelineByAgent.current[card.key]

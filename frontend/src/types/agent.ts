@@ -2,6 +2,7 @@ export type AgentName =
   | 'extraction'
   | 'industry'
   | 'collateral'
+  | 'guarantor'
   | 'packaging'
   | 'financial'
   | 'risk'
