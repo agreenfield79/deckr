@@ -57,6 +57,10 @@ def _config_status() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    from services.event_bus import set_main_loop
+    set_main_loop(asyncio.get_running_loop())
+
     logger.info("Deckr API starting up")
     for key in sorted(_CREDENTIAL_KEYS):
         val = os.getenv(key)

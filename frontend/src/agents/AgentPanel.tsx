@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Send, Loader2, Trash2 } from 'lucide-react'
 import { useAgent } from './useAgent'
+import { useAgentEvents } from './useAgentEvents'
 import AgentSelector from './AgentSelector'
 import AgentMessageItem from './AgentMessage'
 import AgentActions from './AgentActions'
+import AgentOffice from './AgentOffice'
 import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
 import { getHealth } from '../api/health'
@@ -11,6 +13,7 @@ import { getHealth } from '../api/health'
 export default function AgentPanel() {
   const { refreshTree, writeFile } = useProject()
   const { success: toastSuccess, error: toastError } = useToast()
+  const { agentActivity } = useAgentEvents()
   const {
     agents,
     selectedAgent,
@@ -129,6 +132,13 @@ export default function AgentPanel() {
           onSelect={setSelectedAgent}
         />
       </div>
+
+      {/* Agent Office — real-time status cards */}
+      <AgentOffice
+        agentActivity={agentActivity}
+        pipelineSteps={pipelineSteps}
+        isPipelineRunning={isPipelineRunning}
+      />
 
       {/* Message list */}
       <div className="flex-1 overflow-y-auto py-2 space-y-0.5">

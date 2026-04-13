@@ -22,6 +22,10 @@ AGENTS: dict[str, dict] = {
         "model":           "granite",
         "mode":            "generate",
         "conversational":  True,
+        # Agent is instructed to save its output via the save_to_workspace tool in Orchestrate.
+        # Suppresses the backend auto-save in the Orchestrate path to prevent the tool-saved
+        # full analysis from being overwritten by the agent's brief confirmation reply.
+        "orchestrate_tool_save": True,
         "action_map": {
             "business_overview":   "Agent Notes/business_overview.md",
             "financial_summary":   "Agent Notes/financial_summary.md",

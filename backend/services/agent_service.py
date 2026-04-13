@@ -5,7 +5,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from services import agent_registry, orchestrate_client, watsonx_client, workspace_service
+from services import agent_registry, event_bus, orchestrate_client, watsonx_client, workspace_service
 from services.extraction_service import get_extracted_text
 
 logger = logging.getLogger("deckr.agent_service")
@@ -32,6 +32,9 @@ def run(
         agent_name, session_id, agent["mode"], use_orchestrate,
         action_type or "default", len(tools) if tools else 0,
     )
+
+    _run_start = time.time()
+    event_bus.publish({"type": "agent_start", "agent_name": agent_name, "session_id": session_id})
 
     if use_orchestrate:
         _MAX_CONTEXT_CHARS  = 10_000
@@ -101,12 +104,26 @@ def run(
             )
 
         effective_path = save_path or (agent["output_path"] if save_to_workspace else None)
-        if save_to_workspace and effective_path:
+        # When orchestrate_tool_save=True the agent is instructed to call the
+        # save_to_workspace tool internally (Orchestrate's tool loop).  Suppress the
+        # backend auto-save here so the brief confirmation reply the agent returns
+        # does not overwrite the full content already written by the tool.
+        tool_handles_save = agent.get("orchestrate_tool_save", False)
+        if save_to_workspace and effective_path and not tool_handles_save:
             content = _wrap_with_frontmatter(reply, agent_name, effective_path)
             workspace_service.write_file(effective_path, content)
             logger.info("agent_service: output saved to %s (via orchestrate)", effective_path)
+            event_bus.publish({"type": "agent_saved", "agent_name": agent_name, "saved_to": effective_path, "session_id": session_id})
+        elif tool_handles_save and save_to_workspace:
+            logger.info(
+                "agent_service: backend auto-save suppressed for agent=%s (orchestrate_tool_save=True) — "
+                "save_to_workspace tool is responsible for persisting output",
+                agent_name,
+            )
 
-        return {"reply": reply, "saved_to": effective_path if save_to_workspace else None}
+        _elapsed = int((time.time() - _run_start) * 1000)
+        event_bus.publish({"type": "agent_done", "agent_name": agent_name, "elapsed_ms": _elapsed, "session_id": session_id})
+        return {"reply": reply, "saved_to": effective_path if (save_to_workspace and not tool_handles_save) else None}
 
     # --- Direct watsonx.ai path ---
     context = _load_context(agent["context_folders"], message)
@@ -159,7 +176,10 @@ def run(
         content = _wrap_with_frontmatter(reply, agent_name, effective_path)
         workspace_service.write_file(effective_path, content)
         logger.info("agent_service: output saved to %s", effective_path)
+        event_bus.publish({"type": "agent_saved", "agent_name": agent_name, "saved_to": effective_path, "session_id": session_id})
 
+    _elapsed = int((time.time() - _run_start) * 1000)
+    event_bus.publish({"type": "agent_done", "agent_name": agent_name, "elapsed_ms": _elapsed, "session_id": session_id})
     return {"reply": reply, "saved_to": effective_path if save_to_workspace else None}
 
 
@@ -397,7 +417,9 @@ def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> s
 _PIPELINE_PROMPTS: dict[str, str] = {
     "financial": (
         "Run Financial Analysis Agent — generate a comprehensive financial analysis of all "
-        "uploaded documents including leverage, liquidity, collateral, and guarantor review."
+        "uploaded documents including leverage, liquidity, collateral, and guarantor review. "
+        "Return your COMPLETE analysis as your reply text. Do NOT replace it with a brief "
+        "save confirmation — the pipeline requires the full output in the reply."
     ),
     "risk": (
         "Run SLACR Risk Agent — score this deal using the SLACR framework, produce a risk "

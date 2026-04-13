@@ -1,12 +1,15 @@
+import asyncio
+import json
 import logging
 import re
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 
 from models.agent import AgentRequest, AgentResponse, PipelineRequest
 from models.slacr import SlacrInput
 from services import agent_registry, agent_service, slacr_service, workspace_service
+from services.event_bus import subscribe, unsubscribe
 
 logger = logging.getLogger("deckr.routers.agent")
 
@@ -57,6 +60,46 @@ def run_pipeline(body: PipelineRequest) -> StreamingResponse:
     return StreamingResponse(
         agent_service.run_pipeline_stream(body.session_id, body.message),
         media_type="application/x-ndjson",
+    )
+
+
+@router.get("/events")
+async def agent_events(request: Request) -> StreamingResponse:
+    """
+    Server-Sent Events stream — emits agent activity events in real time.
+
+    Event types: agent_start, agent_done, agent_saved
+    Each event is a JSON object with at minimum: type, agent_name, timestamp.
+
+    The browser EventSource API reconnects automatically on disconnect.
+    A keepalive comment is sent every 25 seconds to prevent proxy timeouts.
+    """
+    q = subscribe()
+    logger.info("GET /agent/events — SSE client connected")
+
+    async def generate():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=25.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    # Keepalive comment to prevent proxy/browser timeout
+                    yield ": keepalive\n\n"
+        finally:
+            unsubscribe(q)
+            logger.info("GET /agent/events — SSE client disconnected")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx/proxy buffering
+            "Connection": "keep-alive",
+        },
     )
 
 
