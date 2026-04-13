@@ -3,7 +3,7 @@ tool_service.py — agent-callable tool handlers (Phase 15)
 
 Each function corresponds to a tool an agent can invoke via tool calling.
 All handlers are thin wrappers around existing services; only search_web
-adds a new external integration (Tavily REST API, no SDK required).
+adds a new external integration (SerpAPI via requests, no SDK required).
 
 dispatch() is the single entry point used by agent_service and routers/tools.py.
 """

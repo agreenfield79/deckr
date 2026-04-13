@@ -1,0 +1,397 @@
+openapi: 3.0.3
+
+info:
+  title: Deckr Agent Tools
+  version: "1.0.0"
+  description: >
+    Six tool endpoints exposed to IBM watsonx Orchestrate for use by the
+    Financial Analysis, SLACR Risk, Packaging, and Review agents.
+
+    Each path is declared separately so Orchestrate registers exactly one tool
+    per operation. All six paths are served by the same parameterized FastAPI
+    router (POST /api/tools/{tool_name}) running behind an ngrok tunnel during
+    development and IBM Code Engine in production.
+
+    IMPORTANT — ngrok URL changes every session. Before re-importing this spec
+    into Orchestrate, update servers[0].url below with the current ngrok URL,
+    then re-import and re-attach all tools to agents.
+
+servers:
+  - url: https://dissuade-freckles-cornea.ngrok-free.dev
+    description: >
+      Local development tunnel (ngrok static domain — persistent, does not
+      change between sessions). Start the tunnel with:
+        ngrok http --domain=dissuade-freckles-cornea.ngrok-free.dev 8000
+      For Code Engine production deployment, replace with the Code Engine
+      application URL (Phase 19).
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # save_to_workspace
+  # ---------------------------------------------------------------------------
+  /api/tools/save_to_workspace:
+    post:
+      operationId: save_to_workspace
+      summary: Save text content to the borrower workspace
+      description: >
+        Use this tool whenever you need to persist a document, summary, memo,
+        analysis, or any text output to the borrower's workspace on IBM Cloud
+        Object Storage. Provide the relative file path (e.g.
+        "Deck/executive_summary.md") and the full text content to write.
+
+        This is an agent-initiated save — distinct from the automatic
+        save_to_workspace flag. Use it when you want to explicitly record a
+        specific piece of structured output (e.g. a completed credit section,
+        a collateral memo, a risk narrative) so other agents or the underwriter
+        can reference it later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - path
+                    - content
+                  properties:
+                    path:
+                      type: string
+                      description: >
+                        Relative file path within the workspace, using forward
+                        slashes. Examples: "Deck/executive_summary.md",
+                        "Analysis/financial_notes.txt",
+                        "Risk/collateral_memo.md". Existing files are
+                        overwritten; new directories are created automatically.
+                    content:
+                      type: string
+                      description: Full text content to write to the file.
+      responses:
+        "200":
+          description: File saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # get_file_content
+  # ---------------------------------------------------------------------------
+  /api/tools/get_file_content:
+    post:
+      operationId: get_file_content
+      summary: Read a workspace file and return its text content
+      description: >
+        Use this tool to read the full text content of any file already in the
+        borrower workspace. Provide the relative file path. Useful for reading
+        a previously saved section, reviewing uploaded financial statements, or
+        fetching a prior agent's output.
+
+        Do NOT use this tool for binary files (PDFs). For uploaded documents,
+        prefer search_workspace (which uses extracted text) or
+        list_uploaded_documents (which lists available files).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - path
+                  properties:
+                    path:
+                      type: string
+                      description: >
+                        Relative file path within the workspace, using forward
+                        slashes. Examples: "Deck/deck.md",
+                        "Analysis/financial_notes.txt",
+                        "SLACR/slacr.json".
+      responses:
+        "200":
+          description: File content returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # list_uploaded_documents
+  # ---------------------------------------------------------------------------
+  /api/tools/list_uploaded_documents:
+    post:
+      operationId: list_uploaded_documents
+      summary: List documents uploaded to a workspace folder
+      description: >
+        Use this tool to discover what financial documents, PDFs, and other
+        files have been uploaded to the workspace by the underwriter. Returns a
+        list of file entries with name, path, size, last-modified date, and
+        whether text has been extracted (extracted=true means the file is
+        searchable via search_workspace).
+
+        Default folder is "Financials". You can also query "Deck", "Analysis",
+        "SLACR", or any other workspace subfolder. Use this tool before
+        attempting to search or read specific files to confirm they exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  properties:
+                    folder:
+                      type: string
+                      default: Financials
+                      description: >
+                        Workspace folder name to list. Examples: "Financials",
+                        "Deck", "Analysis", "SLACR". Defaults to "Financials"
+                        if not provided.
+      responses:
+        "200":
+          description: List of files in the folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # compute_slacr_score
+  # ---------------------------------------------------------------------------
+  /api/tools/compute_slacr_score:
+    post:
+      operationId: compute_slacr_score
+      summary: Compute a SLACR risk rating from five dimension scores
+      description: >
+        Use this tool to calculate the SLACR (Strength, Leverage,
+        Ability-to-Repay, Collateral, Risk Factors) risk score for the
+        borrower. Provide integer scores (1=best/low risk, 5=worst/high risk)
+        for each of the five dimensions.
+
+        The tool returns a weighted composite score, a rating label (e.g.
+        "Acceptable Risk", "Elevated Risk", "High Risk"), a credit decision
+        recommendation, and suggested mitigants. The result is also
+        automatically persisted to "SLACR/slacr.json" in the workspace.
+
+        Use this tool after completing the financial and risk analysis sections,
+        when you have enough information to score all five dimensions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - strength
+                    - leverage
+                    - ability_to_repay
+                    - collateral
+                    - risk_factors
+                  properties:
+                    strength:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      description: >
+                        Borrower business/management strength. 1=very strong
+                        (experienced management, solid track record, diversified
+                        revenue), 5=very weak (unproven management, concentrated
+                        revenue, limited history).
+                    leverage:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      description: >
+                        Borrower financial leverage / debt burden. 1=low
+                        leverage (strong equity base, conservative D/E ratio),
+                        5=high leverage (heavily indebted, thin equity cushion).
+                    ability_to_repay:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      description: >
+                        Ability to service the proposed debt from operating cash
+                        flow. 1=very strong (DSCR well above 1.5x), 5=very weak
+                        (DSCR below 1.0x or insufficient cash flow data).
+                    collateral:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      description: >
+                        Quality and sufficiency of collateral pledged. 1=strong
+                        collateral (high-value, liquid, first-lien position,
+                        LTV well below 65%), 5=weak collateral (illiquid,
+                        junior lien, high LTV, or no collateral identified).
+                    risk_factors:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      description: >
+                        Overall residual risk factors including industry,
+                        regulatory, concentration, and guarantor risk. 1=minimal
+                        additional risk, 5=multiple compounding high-severity
+                        risk factors.
+      responses:
+        "200":
+          description: SLACR score computed and saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # search_workspace
+  # ---------------------------------------------------------------------------
+  /api/tools/search_workspace:
+    post:
+      operationId: search_workspace
+      summary: Semantic search across uploaded workspace documents
+      description: >
+        Use this tool to retrieve the most relevant text from documents already
+        uploaded and extracted in the borrower workspace. Powered by IBM
+        watsonx embedding-based semantic search — returns the top matching
+        chunks from 10-K filings, financial statements, PDFs, and other
+        uploaded documents.
+
+        Use this tool when you need specific data points from uploaded
+        documents, such as revenue figures, EBITDA, total debt, cash flow,
+        property descriptions, or any other fact that should come from source
+        documents rather than general knowledge. Always prefer this tool over
+        guessing or hallucinating financial figures.
+
+        You can optionally restrict the search to specific workspace folders
+        (e.g. ["Financials"]) or search all folders by omitting the folders
+        parameter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - query
+                  properties:
+                    query:
+                      type: string
+                      description: >
+                        Natural language search query describing the information
+                        you need. Examples: "total revenue for fiscal year 2024",
+                        "net income and EBITDA last three years",
+                        "warehouse property appraisal value",
+                        "borrower cash flow from operations".
+                    folders:
+                      type: array
+                      items:
+                        type: string
+                      description: >
+                        Optional list of workspace folder names to restrict the
+                        search. Examples: ["Financials"], ["Financials",
+                        "Analysis"]. Omit or pass null to search all folders.
+      responses:
+        "200":
+          description: Relevant document chunks returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # search_web
+  # ---------------------------------------------------------------------------
+  /api/tools/search_web:
+    post:
+      operationId: search_web
+      summary: Search the web for live market data or public information
+      description: >
+        Use this tool to retrieve current, real-world information from the
+        internet that is not available in the borrower's uploaded workspace
+        documents. Powered by SerpAPI (Google Search results). Returns titles,
+        URLs, and snippets for the top matching results.
+
+        Ideal use cases: current commercial real estate cap rates, warehouse
+        rental rates, industry benchmarks, recent news about the borrower,
+        regulatory changes, market conditions in the target city or region.
+
+        Do NOT use this tool for information that should come from the
+        borrower's own uploaded financial documents — use search_workspace
+        for that. Reserve this tool for external market context and data not
+        found in the workspace.
+
+        Requires SERPAPI_KEY to be configured. Free tier: 100 searches/month.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - query
+                  properties:
+                    query:
+                      type: string
+                      description: >
+                        Web search query string. Be specific and include
+                        geographic context and year where relevant. Examples:
+                        "Des Moines Iowa industrial warehouse cap rate 2026",
+                        "commercial real estate lending standards 2026",
+                        "NAICS 493110 warehousing industry default rates".
+                    max_results:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+                      default: 5
+                      description: >
+                        Maximum number of search results to return. Defaults
+                        to 5. Increase to 10 for broader market research.
+      responses:
+        "200":
+          description: Web search results returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+# ---------------------------------------------------------------------------
+# Shared response schema
+# ---------------------------------------------------------------------------
+components:
+  schemas:
+    ToolResponse:
+      type: object
+      description: Standard response envelope returned by all tool endpoints.
+      required:
+        - tool_name
+      properties:
+        tool_name:
+          type: string
+          description: Name of the tool that was invoked.
+        result:
+          description: >
+            Tool output. Type varies by tool: save_to_workspace returns an
+            object {saved, path, bytes}; get_file_content returns a string;
+            list_uploaded_documents returns an array of file objects;
+            compute_slacr_score returns an object {weighted_score, rating,
+            decision, mitigants}; search_workspace and search_web return
+            formatted strings.
+        error:
+          type: string
+          nullable: true
+          description: >
+            Error message if the tool failed, null on success. Always check
+            this field before using the result.
