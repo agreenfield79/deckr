@@ -18,10 +18,12 @@ const EXTRACTION_CARD: AgentCard = {
   key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
 }
 
-// Analytical pipeline cards — rendered in a 2×2 grid
+// Analytical pipeline cards — rendered in a 3-column grid (Phase 20+).
+// Layout will be redesigned in Phase 22.5 when all 8 pipeline agents are present.
 const AGENT_CARDS: AgentCard[] = [
   { key: 'financial', label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
   { key: 'risk',      label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
+  { key: 'industry',  label: 'Industry',   abbr: 'In',  activeColor: 'ring-[#198038] bg-[#defbe6]' },
   { key: 'packaging', label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
   { key: 'review',    label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
 ]
@@ -184,11 +186,11 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
             />
           </div>
 
-          {/* Analysis — 2×2 grid */}
+          {/* Analysis — 3-column grid (Phase 20+; redesigned at Phase 22.5) */}
           <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mb-1 px-0.5">
             Analysis
           </p>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
             {AGENT_CARDS.map((card) => {
               const activity = agentActivity[card.key]
               const pipelineStep = pipelineByAgent.current[card.key]

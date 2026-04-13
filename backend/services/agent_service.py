@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import os
@@ -12,8 +13,38 @@ from services.extraction_service import get_extracted_text
 
 logger = logging.getLogger("deckr.agent_service")
 
-# Agents executed in order by run_pipeline_stream()
-PIPELINE_SEQUENCE = ["extraction", "financial", "risk", "packaging", "review"]
+# Pipeline execution plan — list of stages, each stage a list of agents.
+# Single-agent stages run sequentially; multi-agent stages run in parallel
+# via ThreadPoolExecutor, each agent on its own isolated Orchestrate thread.
+#
+# Architecture (Phase 20+):
+#   1. Extraction  — sequential, context-injection path (no Orchestrate thread needed)
+#   2. Analysis    — PARALLEL isolated threads: financial + industry
+#                    (Phase 21: add collateral; Phase 22: add guarantor)
+#                    Each reads uploaded docs from embeddings/workspace independently.
+#                    No inter-agent dependency — all self-sufficient from raw uploads.
+#   3. Risk        — sequential, isolated thread; reads all analysis outputs from
+#                    workspace via tool calls (no thread history required).
+#   4. Packaging   — sequential, isolated thread; assembles deck from workspace files.
+#   5. Review      — sequential, SHARES packaging's thread so GPT-OSS 120B already
+#                    has the full deck in thread memory; retrieves source files for
+#                    cross-referencing without needing to re-read the full deck.
+#
+# Phase 21 expansion: replace ["financial", "industry"] with
+#   ["financial", "industry", "collateral"]
+# Phase 22 expansion: replace with
+#   ["financial", "industry", "collateral", "guarantor"]
+# — one line change here; no other code changes required.
+PIPELINE_STAGES: list[list[str]] = [
+    ["extraction"],
+    ["financial", "industry"],   # parallel isolated threads (Phase 21: + collateral, Phase 22: + guarantor)
+    ["risk"],
+    ["packaging"],
+    ["review"],
+]
+
+# Flat sequence derived from stages — used for _PIPELINE_PROMPTS lookup and display
+PIPELINE_SEQUENCE = [agent for stage in PIPELINE_STAGES for agent in stage]
 
 
 def run(
@@ -749,6 +780,11 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "the canonical schema, and save structured output to Financials/extracted_data.json and "
         "Financials/financial_data_summary.md for use by all downstream analysis agents."
     ),
+    "industry": (
+        "Run Industry Analysis Agent — research the borrower's industry using web search and save "
+        "a complete industry and market analysis to Agent Notes/industry_analysis.md for use by "
+        "the Packaging Agent."
+    ),
     "financial": (
         "Run Financial Analysis Agent — generate a comprehensive financial analysis of all "
         "uploaded documents including leverage, liquidity, collateral, and guarantor review. "
@@ -772,14 +808,20 @@ _PIPELINE_PROMPTS: dict[str, str] = {
 
 def run_pipeline_stream(session_id: str, message: str = ""):
     """
-    Generator that runs agents in sequence (Financial → Risk → Packaging → Review)
-    and yields NDJSON progress events for FastAPI StreamingResponse.
+    Generator that runs pipeline stages in sequence, yielding NDJSON progress
+    events for FastAPI StreamingResponse.
+
+    Stages are defined in PIPELINE_STAGES (list of lists).  Single-agent stages
+    run sequentially.  Multi-agent stages (e.g. financial + collateral + guarantor
+    at Phase 22) run in parallel via ThreadPoolExecutor — all agents in the stage
+    start simultaneously; the next stage does not begin until every agent in the
+    current stage has completed or errored.
 
     Event types:
-      {"type": "pipeline_start", "total": 4}
-      {"type": "step_start",  "agent": str, "display_name": str, "step": int, "total": int}
-      {"type": "step_done",   "agent": str, "step": int, "saved_to": str|None, "elapsed_ms": int, "reply_preview": str}
-      {"type": "step_error",  "agent": str, "step": int, "error": str, "elapsed_ms": int}
+      {"type": "pipeline_start",    "total": int}
+      {"type": "step_start",        "agent": str, "display_name": str, "step": int, "total": int}
+      {"type": "step_done",         "agent": str, "step": int, "saved_to": str|None, "elapsed_ms": int, "reply_preview": str}
+      {"type": "step_error",        "agent": str, "step": int, "error": str, "elapsed_ms": int}
       {"type": "pipeline_complete", "steps_done": int, "steps_failed": int, "total_elapsed_ms": int}
     """
     total = len(PIPELINE_SEQUENCE)
@@ -793,77 +835,185 @@ def run_pipeline_stream(session_id: str, message: str = ""):
 
     yield json.dumps({"type": "pipeline_start", "total": total}) + "\n"
     logger.info(
-        "agent_service.run_pipeline_stream: started session=%s thread=%s",
-        session_id, pipeline_thread_id,
+        "agent_service.run_pipeline_stream: started session=%s thread=%s stages=%d agents=%d",
+        session_id, pipeline_thread_id, len(PIPELINE_STAGES), total,
     )
 
-    for i, agent_name in enumerate(PIPELINE_SEQUENCE):
-        step_num = i + 1
-        agent_cfg = agent_registry.get_agent(agent_name)
-        display_name = agent_cfg["display_name"]
+    step_num = 0  # global step counter across all stages
 
-        yield json.dumps({
-            "type": "step_start",
-            "agent": agent_name,
-            "display_name": display_name,
-            "step": step_num,
-            "total": total,
-        }) + "\n"
-        logger.info(
-            "agent_service.run_pipeline_stream: step %d/%d agent=%s session=%s",
-            step_num, total, agent_name, session_id,
-        )
-
-        step_start = time.time()
-        try:
-            # Extraction agent uses the context-injection path (no tool calls).
-            # All other agents use the standard run() path.
-            # Both use pipeline_thread_id so each run gets a clean Orchestrate thread.
-            if agent_name == "extraction":
-                result = run_extraction(session_id, thread_id=pipeline_thread_id)
-            else:
-                prompt = message or _PIPELINE_PROMPTS.get(
-                    agent_name,
-                    f"Run {display_name} — generate comprehensive analysis.",
-                )
-                result = run(
-                    agent_name=agent_name,
-                    message=prompt,
-                    session_id=session_id,
-                    messages=[],        # standalone call — no conversation history
-                    save_to_workspace=True,
-                    save_path=None,
-                    thread_id=pipeline_thread_id,
-                )
-            elapsed = int((time.time() - step_start) * 1000)
-            reply_preview = (result["reply"] or "")[:200].replace("\n", " ")
-            steps_done += 1
-            logger.info(
-                "agent_service.run_pipeline_stream: step %d done agent=%s elapsed=%dms saved_to=%s",
-                step_num, agent_name, elapsed, result.get("saved_to"),
-            )
+    for stage in PIPELINE_STAGES:
+        # ── emit step_start for every agent in this stage ────────────────────
+        stage_step_nums: dict[str, int] = {}
+        for agent_name in stage:
+            step_num += 1
+            stage_step_nums[agent_name] = step_num
+            agent_cfg = agent_registry.get_agent(agent_name)
             yield json.dumps({
-                "type": "step_done",
-                "agent": agent_name,
-                "step": step_num,
-                "saved_to": result.get("saved_to"),
-                "elapsed_ms": elapsed,
-                "reply_preview": reply_preview,
+                "type":         "step_start",
+                "agent":        agent_name,
+                "display_name": agent_cfg["display_name"],
+                "step":         step_num,
+                "total":        total,
             }) + "\n"
 
-        except Exception as exc:
-            elapsed = int((time.time() - step_start) * 1000)
+        logger.info(
+            "agent_service.run_pipeline_stream: stage [%s] starting session=%s",
+            ", ".join(stage), session_id,
+        )
+
+        # ── helper: run one agent and return (agent_name, result_or_exc, elapsed) ─
+        def _run_agent(agent_name: str, thread_id: str) -> tuple[str, dict | Exception, int]:
+            agent_cfg = agent_registry.get_agent(agent_name)
+            t0 = time.time()
+            try:
+                if agent_name == "extraction":
+                    result = run_extraction(session_id, thread_id=thread_id)
+                else:
+                    prompt = message or _PIPELINE_PROMPTS.get(
+                        agent_name,
+                        f"Run {agent_cfg['display_name']} — generate comprehensive analysis.",
+                    )
+                    result = run(
+                        agent_name=agent_name,
+                        message=prompt,
+                        session_id=session_id,
+                        messages=[],
+                        save_to_workspace=True,
+                        save_path=None,
+                        thread_id=thread_id,
+                    )
+                return agent_name, result, int((time.time() - t0) * 1000)
+            except Exception as exc:
+                return agent_name, exc, int((time.time() - t0) * 1000)
+
+        # ── execute stage (parallel if >1 agent, sequential if single) ───────
+        pending_events: list[str] = []
+
+        if len(stage) == 1:
+            # Single-agent stage — run inline, no thread overhead.
+            #
+            # Thread strategy:
+            #   - Sequential analysis agents (extraction → financial → industry →
+            #     risk → packaging) share pipeline_thread_id so that each agent
+            #     benefits from the accumulated conversation context built by the
+            #     agents that ran before it on the same Orchestrate thread.
+            #     (Industry needs financial context; packaging needs everything.)
+            #   - The review agent is isolated on its own thread
+            #     (pipeline_thread_id + "-review") to prevent the ~30-message
+            #     accumulation from the five prior agents from overwhelming it.
+            #     Review retrieves everything it needs via explicit tool calls.
+            agent_name = stage[0]
+            if agent_name == "review":
+                # Review shares packaging's Orchestrate thread.
+                # By the time review runs, the packaging thread already holds the
+                # full deck as packaging's prior assistant response — GPT-OSS 120B
+                # starts with the deck in thread memory and only needs to call
+                # get_file_content for the smaller cross-reference files
+                # (financial_analysis.md, slacr_analysis.md).  This avoids the
+                # "I am sorry" fallback that occurs when review is given a
+                # completely isolated thread with 19K+ chars of new tool content.
+                agent_thread_id = f"{pipeline_thread_id}-packaging"
+            elif agent_name in ("packaging", "risk"):
+                # packaging: assembles the deck from workspace files; does not
+                #   need thread history from the analysis chain.
+                # risk: reads all four analysis agent outputs from workspace via
+                #   tool calls; does not need prior thread context.
+                # Both get their own isolated threads.
+                agent_thread_id = f"{pipeline_thread_id}-{agent_name}"
+            else:
+                # extraction: the only remaining sequential pre-parallel stage.
+                # Uses shared pipeline_thread_id (context-injection path — the
+                # thread content is largely irrelevant for extraction).
+                agent_thread_id = pipeline_thread_id
+            agent_name_out, result_or_exc, elapsed = _run_agent(agent_name, agent_thread_id)
+        else:
+            # Multi-agent stage — run concurrently.
+            # Parallel agents cannot share a thread (concurrent writes would
+            # conflict), so each gets its own isolated thread ID.  They do not
+            # need prior-stage thread context because the workspace files written
+            # by earlier stages (extracted_data.json, etc.) are available via
+            # tool calls.
+            futures: dict[concurrent.futures.Future, str] = {}
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(stage))
+            for agent_name in stage:
+                agent_thread_id = f"{pipeline_thread_id}-{agent_name}"
+                fut = executor.submit(_run_agent, agent_name, agent_thread_id)
+                futures[fut] = agent_name
+
+            # Collect results as they complete; buffer events for yielding below
+            results_map: dict[str, tuple[dict | Exception, int]] = {}
+            for fut in concurrent.futures.as_completed(futures):
+                agent_name_out, result_or_exc, elapsed = fut.result()
+                results_map[agent_name_out] = (result_or_exc, elapsed)
+
+            executor.shutdown(wait=False)
+
+            # Yield events for all agents in stage order for consistent UI rendering
+            for agent_name in stage:
+                result_or_exc, elapsed = results_map[agent_name]
+                sn = stage_step_nums[agent_name]
+                if isinstance(result_or_exc, Exception):
+                    steps_failed += 1
+                    logger.error(
+                        "agent_service.run_pipeline_stream: step %d failed agent=%s — %s",
+                        sn, agent_name, result_or_exc,
+                    )
+                    pending_events.append(json.dumps({
+                        "type":       "step_error",
+                        "agent":      agent_name,
+                        "step":       sn,
+                        "error":      str(result_or_exc),
+                        "elapsed_ms": elapsed,
+                    }) + "\n")
+                else:
+                    steps_done += 1
+                    reply_preview = (result_or_exc.get("reply") or "")[:200].replace("\n", " ")
+                    logger.info(
+                        "agent_service.run_pipeline_stream: step %d done agent=%s elapsed=%dms saved_to=%s",
+                        sn, agent_name, elapsed, result_or_exc.get("saved_to"),
+                    )
+                    pending_events.append(json.dumps({
+                        "type":         "step_done",
+                        "agent":        agent_name,
+                        "step":         sn,
+                        "saved_to":     result_or_exc.get("saved_to"),
+                        "elapsed_ms":   elapsed,
+                        "reply_preview": reply_preview,
+                    }) + "\n")
+
+            for ev in pending_events:
+                yield ev
+            continue  # skip the single-agent path below
+
+        # ── single-agent path: emit done/error event ──────────────────────────
+        sn = stage_step_nums[agent_name_out]
+        if isinstance(result_or_exc, Exception):
             steps_failed += 1
             logger.error(
                 "agent_service.run_pipeline_stream: step %d failed agent=%s — %s",
-                step_num, agent_name, exc,
+                sn, agent_name_out, result_or_exc,
             )
             yield json.dumps({
-                "type": "step_error",
-                "agent": agent_name,
-                "step": step_num,
-                "error": str(exc),
+                "type":       "step_error",
+                "agent":      agent_name_out,
+                "step":       sn,
+                "error":      str(result_or_exc),
                 "elapsed_ms": elapsed,
+            }) + "\n"
+        else:
+            steps_done += 1
+            reply_preview = (result_or_exc.get("reply") or "")[:200].replace("\n", " ")
+            logger.info(
+                "agent_service.run_pipeline_stream: step %d done agent=%s elapsed=%dms saved_to=%s",
+                sn, agent_name_out, elapsed, result_or_exc.get("saved_to"),
+            )
+            yield json.dumps({
+                "type":         "step_done",
+                "agent":        agent_name_out,
+                "step":         sn,
+                "saved_to":     result_or_exc.get("saved_to"),
+                "elapsed_ms":   elapsed,
+                "reply_preview": reply_preview,
             }) + "\n"
 
     total_elapsed = int((time.time() - pipeline_start) * 1000)
@@ -872,8 +1022,8 @@ def run_pipeline_stream(session_id: str, message: str = ""):
         session_id, steps_done, steps_failed, total_elapsed,
     )
     yield json.dumps({
-        "type": "pipeline_complete",
-        "steps_done": steps_done,
-        "steps_failed": steps_failed,
-        "total_elapsed_ms": total_elapsed,
+        "type":              "pipeline_complete",
+        "steps_done":        steps_done,
+        "steps_failed":      steps_failed,
+        "total_elapsed_ms":  total_elapsed,
     }) + "\n"

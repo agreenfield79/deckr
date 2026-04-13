@@ -5,6 +5,24 @@ from fastapi import HTTPException
 logger = logging.getLogger("deckr.agent_registry")
 
 AGENTS: dict[str, dict] = {
+    "industry": {
+        "display_name":    "Industry Analysis Agent",
+        "system_prompt":   "prompts/industry_agent.txt",
+        # NAICS/business description lives in Borrower/ and Loan Request/;
+        # Agent Notes/ provides prior agent outputs as supporting context.
+        # context_folders drives the 10k-char Orchestrate context block in run().
+        # The agent uses search_workspace + search_web tools for live research.
+        "context_folders": ["Borrower/", "Loan Request/", "Agent Notes/"],
+        "output_path":     "Agent Notes/industry_analysis.md",
+        "model":           "granite",
+        "mode":            "generate",
+        "conversational":  False,
+        # Agent calls save_to_workspace via Orchestrate (saves full industry_analysis.md),
+        # then returns a brief 2-3 sentence confirmation as reply.
+        # orchestrate_tool_save=True suppresses backend auto-save so the brief
+        # confirmation does not overwrite the full content the tool already wrote.
+        "orchestrate_tool_save": True,
+    },
     "extraction": {
         "display_name":    "Financial Data Extraction Agent",
         "system_prompt":   "prompts/extraction_agent.txt",

@@ -39,22 +39,29 @@ def dispatch(tool_name: str, inputs: dict) -> str | dict:
 # Tool handlers
 # ---------------------------------------------------------------------------
 
-def save_to_workspace(path: str, content: str) -> dict:
+def save_to_workspace(path: str, content: str, **kwargs) -> dict:
     """
     Agent-initiated file save to workspace.
 
     Unlike the backend's automatic save_to_workspace=True path (which always
     saves agent output), this is explicitly invoked by the agent to persist
     a specific piece of content at a specific path.
+
+    **kwargs absorbs extra metadata fields Orchestrate may inject (e.g. tool_name)
+    so the handler does not raise on unexpected keyword arguments.
     """
+    if kwargs:
+        logger.debug("tool_service.save_to_workspace: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service
     workspace_service.write_file(path, content)
     logger.info("tool_service.save_to_workspace: wrote %d chars to %s", len(content), path)
     return {"saved": True, "path": path, "bytes": len(content)}
 
 
-def get_file_content(path: str) -> str:
+def get_file_content(path: str, **kwargs) -> str:
     """Read a workspace file and return its text content."""
+    if kwargs:
+        logger.debug("tool_service.get_file_content: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service
     try:
         content = workspace_service.read_file(path)
@@ -64,8 +71,10 @@ def get_file_content(path: str) -> str:
         raise ValueError(f"Cannot read '{path}': {e.detail}") from e
 
 
-def list_uploaded_documents(folder: str = "Financials") -> list[dict]:
+def list_uploaded_documents(folder: str = "Financials", **kwargs) -> list[dict]:
     """List files in a workspace folder. Returns [{name, path, size, modified, extracted}]."""
+    if kwargs:
+        logger.debug("tool_service.list_uploaded_documents: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service
     results = workspace_service.list_folder(folder)
     logger.info("tool_service.list_uploaded_documents: %d files in '%s'", len(results), folder)
@@ -78,6 +87,7 @@ def compute_slacr_score(
     ability_to_repay: int,
     collateral: int,
     risk_factors: int,
+    **kwargs,
 ) -> dict:
     """
     Compute a SLACR risk score from five dimension scores (each 1–5, where 1=best).
@@ -102,6 +112,8 @@ def compute_slacr_score(
         "decision": output.decision,
         "mitigants": output.mitigants,
     }
+    if kwargs:
+        logger.debug("tool_service.compute_slacr_score: ignoring extra kwargs %s", list(kwargs.keys()))
     logger.info(
         "tool_service.compute_slacr_score: score=%.2f rating=%s",
         output.weighted_score, output.rating,
@@ -109,13 +121,24 @@ def compute_slacr_score(
     return result
 
 
-def search_workspace(query: str, folders: list[str] | None = None) -> str:
+def search_workspace(query: str = None, folders: list[str] | None = None, **kwargs) -> str:
     """
     Semantic search across workspace documents using the embeddings index.
 
     Returns the most relevant document chunks for the given query.
     Defaults to searching all workspace folders.
+
+    **kwargs absorbs extra metadata fields Orchestrate may inject.
     """
+    if not query:
+        logger.warning("tool_service.search_workspace: 'query' argument missing — returning guidance")
+        return (
+            'ERROR: Required parameter "query" was not provided. '
+            'Call this tool again and include the query field. '
+            'Example: {"query": "revenue EBITDA net income industry sector"}'
+        )
+    if kwargs:
+        logger.debug("tool_service.search_workspace: ignoring extra kwargs %s", list(kwargs.keys()))
     context_folders = folders or ["all"]
     if os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true":
         try:
@@ -156,14 +179,25 @@ def search_workspace(query: str, folders: list[str] | None = None) -> str:
     return "\n\n".join(parts) if parts else "[No workspace documents found]"
 
 
-def search_web(query: str, max_results: int = 5) -> str:
+def search_web(query: str = None, max_results: int = 5, **kwargs) -> str:
     """
     Live web search via SerpAPI (Google Search results).
 
     Returns a formatted string of search results with titles, URLs, and snippets.
     Requires SERPAPI_KEY in environment.  Free tier: 100 searches/month.
     Sign up at serpapi.com.
+
+    **kwargs absorbs extra metadata fields Orchestrate may inject.
     """
+    if not query:
+        logger.warning("tool_service.search_web: 'query' argument missing — returning guidance")
+        return (
+            'ERROR: Required parameter "query" was not provided. '
+            'Call this tool again and include the query field. '
+            'Example: {"query": "semiconductor industry market size 2026 global CAGR"}'
+        )
+    if kwargs:
+        logger.debug("tool_service.search_web: ignoring extra kwargs %s", list(kwargs.keys()))
     api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
         raise ValueError(

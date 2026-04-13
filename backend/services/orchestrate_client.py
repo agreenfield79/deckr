@@ -18,6 +18,7 @@ _orchestrate_token_cache = TokenCache(api_key_env_var="ORCHESTRATE_API_KEY")
 # coordination is intentionally omitted — future Lender RFP agent, not yet deployed.
 _AGENT_ID_MAP: dict[str, str | None] = {
     "extraction": os.getenv("ORCHESTRATE_AGENT_ID_EXTRACTION"),
+    "industry":   os.getenv("ORCHESTRATE_AGENT_ID_INDUSTRY"),
     "packaging":  os.getenv("ORCHESTRATE_AGENT_ID_PACKAGING"),
     "financial":  os.getenv("ORCHESTRATE_AGENT_ID_FINANCIAL"),
     "risk":       os.getenv("ORCHESTRATE_AGENT_ID_RISK"),
