@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import re
 import time
+import uuid
 from datetime import date
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from services.extraction_service import get_extracted_text
 logger = logging.getLogger("deckr.agent_service")
 
 # Agents executed in order by run_pipeline_stream()
-PIPELINE_SEQUENCE = ["financial", "risk", "packaging", "review"]
+PIPELINE_SEQUENCE = ["extraction", "financial", "risk", "packaging", "review"]
 
 
 def run(
@@ -23,6 +25,7 @@ def run(
     save_path: str | None,
     action_type: str | None = None,
     tools: list[dict] | None = None,
+    thread_id: str | None = None,
 ) -> dict:
     agent = agent_registry.get_agent(agent_name)
     use_orchestrate = os.getenv("USE_ORCHESTRATE", "false").lower() == "true"
@@ -89,7 +92,7 @@ def run(
             agent_name,
         )
 
-        result = orchestrate_client.invoke_agent(agent_name, orchestrate_messages, session_id)
+        result = orchestrate_client.invoke_agent(agent_name, orchestrate_messages, session_id, thread_id)
         reply = result["reply"]
 
         # Tool dispatch loop — Orchestrate path
@@ -100,7 +103,7 @@ def run(
                 session_id=session_id,
                 messages=orchestrate_messages,
                 result=result,
-                invoke_fn=lambda msgs: orchestrate_client.invoke_agent(agent_name, msgs, session_id),
+                invoke_fn=lambda msgs: orchestrate_client.invoke_agent(agent_name, msgs, session_id, thread_id),
             )
 
         effective_path = save_path or (agent["output_path"] if save_to_workspace else None)
@@ -288,6 +291,331 @@ def _run_tool_dispatch(
     return current_result.get("reply") or ""
 
 
+# ---------------------------------------------------------------------------
+# Extraction pipeline — context-injection path (no tool calls)
+# ---------------------------------------------------------------------------
+
+_EXTRACTION_FOLDERS = ["Financials", "Tax Returns", "Guarantors"]
+
+# Total character budget across ALL documents combined.
+# GPT-OSS 120B supports ~128k tokens ≈ 500k chars.
+# 450k leaves ~50k for the system prompt + JSON schema instructions.
+# Individual documents are never truncated in the middle — each is included
+# in full until the budget is exhausted, at which point the remaining
+# document is truncated from the bottom (tail cut, not head+tail split).
+# This correctly handles any document type: 4-page QuickBooks export,
+# 30-page tax return, 10-K, or any combination thereof.
+_EXTRACTION_TOTAL_BUDGET = 450_000
+
+_NULL_SCHEMA: dict = {
+    "company": None,
+    "document_type": None,
+    "fiscal_years": [],
+    "income_statement": {
+        "revenue":                   {},
+        "gross_profit":              {},
+        "ebitda":                    {},
+        "operating_income":          {},
+        "net_income":                {},
+        "interest_expense":          {},
+        "depreciation_amortization": {},
+    },
+    "balance_sheet": {
+        "total_assets":        {},
+        "total_liabilities":   {},
+        "total_equity":        {},
+        "cash":                {},
+        "current_assets":      {},
+        "current_liabilities": {},
+        "total_debt":          {},
+        "long_term_debt":      {},
+    },
+    "cash_flow_statement": {
+        "operating_cash_flow": {},
+        "capex":               {},
+        "free_cash_flow":      {},
+    },
+    "metadata": {
+        "source_files":   [],
+        "missing_fields": ["all — no documents uploaded"],
+        "extracted_at":   date.today().isoformat(),
+    },
+}
+
+
+def _build_extraction_context() -> tuple[str, list[str]]:
+    """
+    Read sidecar files (.extracted.json) for all documents in the three
+    financial document folders.  COS-aware via workspace_service.
+
+    Each document is included in full. Once the combined text approaches
+    _EXTRACTION_TOTAL_BUDGET, the current document is truncated from the
+    bottom — never split head+tail — and no further documents are added.
+
+    This correctly handles any document type: a 4-page QuickBooks export
+    (~10k chars), a 30-page tax return (~60k chars), a 10-K (~350k chars),
+    or any combination, without ever omitting sections from the middle of
+    a document.
+
+    Returns (context_string, source_file_paths).
+    Returns ("", []) when no documents are found.
+    """
+    parts: list[str] = []
+    source_files: list[str] = []
+    budget_used = 0
+
+    for folder in _EXTRACTION_FOLDERS:
+        try:
+            files = workspace_service.list_folder(folder)
+        except Exception as e:
+            logger.warning("_build_extraction_context: list_folder('%s') failed — %s", folder, e)
+            continue
+
+        for f in files:
+            if budget_used >= _EXTRACTION_TOTAL_BUDGET:
+                logger.warning(
+                    "_build_extraction_context: budget exhausted (%d chars) — skipping %s",
+                    _EXTRACTION_TOTAL_BUDGET, f["path"],
+                )
+                continue
+
+            path = f["path"]          # e.g. "Financials/10K-NVDA.pdf"
+            sidecar = path + ".extracted.json"
+            text = ""
+
+            # Primary: sidecar pre-extracted text
+            try:
+                raw  = workspace_service.read_file(sidecar)
+                data = json.loads(raw)
+                text = data.get("text", "")
+            except Exception:
+                pass
+
+            # Fallback: direct read (plain-text uploads without a sidecar)
+            if not text:
+                try:
+                    text = workspace_service.read_file(path)
+                except Exception:
+                    pass
+
+            if not text or not text.strip():
+                logger.debug("_build_extraction_context: no text for %s — skipping", path)
+                continue
+
+            remaining = _EXTRACTION_TOTAL_BUDGET - budget_used
+            if len(text) > remaining:
+                logger.warning(
+                    "_build_extraction_context: %s truncated from %d to %d chars (budget)",
+                    path, len(text), remaining,
+                )
+                text = text[:remaining]
+
+            parts.append(f"--- FILE: {path} ---\n{text}")
+            source_files.append(path)
+            budget_used += len(text)
+            logger.info(
+                "_build_extraction_context: loaded %s (%d chars, budget used %d/%d)",
+                path, len(text), budget_used, _EXTRACTION_TOTAL_BUDGET,
+            )
+
+    context = "\n\n".join(parts)
+    logger.info(
+        "_build_extraction_context: %d document(s) loaded, total context %d chars",
+        len(source_files), len(context),
+    )
+    return context, source_files
+
+
+def _build_extraction_markdown(data: dict, source_files: list[str]) -> str:
+    """
+    Generate financial_data_summary.md deterministically from the parsed
+    extraction JSON.  Pure Python — no AI call.
+    """
+    company       = data.get("company") or "Unknown"
+    doc_type      = data.get("document_type") or "Unknown"
+    fiscal_years  = data.get("fiscal_years") or []
+    extracted_at  = (data.get("metadata") or {}).get("extracted_at", date.today().isoformat())
+    missing       = (data.get("metadata") or {}).get("missing_fields") or []
+
+    sources = ", ".join(source_files) if source_files else "None"
+
+    def _val(section: str, field: str, fy: str) -> str:
+        v = (data.get(section) or {}).get(field, {})
+        if isinstance(v, dict):
+            raw = v.get(fy)
+        else:
+            raw = None
+        if raw is None:
+            return "—"
+        # Format large numbers with commas; keep small decimals as-is
+        try:
+            n = float(raw)
+            return f"{n:,.0f}" if n == int(n) else f"{n:,.2f}"
+        except (TypeError, ValueError):
+            return str(raw)
+
+    # Build header row and separator dynamically from fiscal_years
+    fy_header = " | ".join(fiscal_years) if fiscal_years else "N/A"
+    fy_sep    = " | ".join(["---"] * len(fiscal_years)) if fiscal_years else "---"
+
+    def _row(label: str, section: str, field: str) -> str:
+        vals = " | ".join(_val(section, field, fy) for fy in fiscal_years) if fiscal_years else "—"
+        return f"| {label} | {vals} |"
+
+    lines = [
+        "## Financial Data Summary",
+        f"**Company:** {company}",
+        f"**Document Type:** {doc_type}",
+        f"**Source Documents:** {sources}",
+        f"**Extracted:** {extracted_at}",
+        "",
+        "### Income Statement",
+        f"| Metric | {fy_header} |",
+        f"|---|{fy_sep}|",
+        _row("Revenue",             "income_statement", "revenue"),
+        _row("Gross Profit",        "income_statement", "gross_profit"),
+        _row("EBITDA",              "income_statement", "ebitda"),
+        _row("Operating Income",    "income_statement", "operating_income"),
+        _row("Net Income",          "income_statement", "net_income"),
+        _row("Interest Expense",    "income_statement", "interest_expense"),
+        _row("D&A",                 "income_statement", "depreciation_amortization"),
+        "",
+        "### Balance Sheet",
+        f"| Metric | {fy_header} |",
+        f"|---|{fy_sep}|",
+        _row("Total Assets",        "balance_sheet", "total_assets"),
+        _row("Total Liabilities",   "balance_sheet", "total_liabilities"),
+        _row("Total Equity",        "balance_sheet", "total_equity"),
+        _row("Cash",                "balance_sheet", "cash"),
+        _row("Current Assets",      "balance_sheet", "current_assets"),
+        _row("Current Liabilities", "balance_sheet", "current_liabilities"),
+        _row("Total Debt",          "balance_sheet", "total_debt"),
+        _row("Long-Term Debt",      "balance_sheet", "long_term_debt"),
+        "",
+        "### Cash Flow Statement",
+        f"| Metric | {fy_header} |",
+        f"|---|{fy_sep}|",
+        _row("Operating Cash Flow", "cash_flow_statement", "operating_cash_flow"),
+        _row("CapEx",               "cash_flow_statement", "capex"),
+        _row("Free Cash Flow",      "cash_flow_statement", "free_cash_flow"),
+        "",
+        f"**Missing Fields:** {', '.join(missing) if missing else 'None'}",
+    ]
+    return "\n".join(lines)
+
+
+def run_extraction(session_id: str, thread_id: str | None = None) -> dict:
+    """
+    Context-injection extraction path (Orchestrate, no tool calls).
+
+    1. Backend pre-loads sidecar text from the three financial folders.
+    2. Injects it as workspace context into the Orchestrate message.
+    3. GPT-OSS 120B parses the text and returns the canonical JSON schema.
+    4. Backend generates the markdown summary in Python.
+    5. Backend saves both output files directly — no save_to_workspace tool call needed.
+    """
+    event_bus.publish({"type": "agent_start", "agent_name": "extraction", "session_id": session_id})
+    _start = time.time()
+
+    context, source_files = _build_extraction_context()
+
+    # --- No documents: write null schema so downstream agents never 404 ---
+    if not context:
+        logger.warning("run_extraction: no financial documents found — writing null schema")
+        null_data = dict(_NULL_SCHEMA)
+        null_data["metadata"] = {
+            "source_files":   [],
+            "missing_fields": ["all — no documents uploaded"],
+            "extracted_at":   date.today().isoformat(),
+        }
+        workspace_service.write_file(
+            "Financials/extracted_data.json",
+            json.dumps(null_data, indent=2),
+        )
+        workspace_service.write_file(
+            "Financials/financial_data_summary.md",
+            "## Financial Data Summary\n\nNo financial documents have been uploaded.",
+        )
+        event_bus.publish({"type": "agent_done", "agent_name": "extraction",
+                           "elapsed_ms": int((time.time() - _start) * 1000), "session_id": session_id})
+        return {
+            "reply": "No financial documents found. Null schema written.",
+            "saved_to": "Financials/extracted_data.json",
+        }
+
+    # --- Build Orchestrate message with pre-injected context ---
+    prompt_path = Path("prompts/extraction_agent.txt")
+    instructions = prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else (
+        "Parse the financial document text provided and return ONLY the canonical JSON schema populated "
+        "with figures found in the documents. No markdown fences, no explanation."
+    )
+
+    full_message = (
+        f"--- WORKSPACE CONTEXT ---\n{context}\n\n"
+        f"--- CURRENT REQUEST ---\n{instructions}"
+    )
+    orchestrate_messages = [{"role": "human", "content": full_message}]
+
+    logger.info(
+        "run_extraction: invoking Orchestrate — context=%d chars, docs=%d",
+        len(context), len(source_files),
+    )
+    result = orchestrate_client.invoke_agent("extraction", orchestrate_messages, session_id, thread_id)
+    reply  = result.get("reply") or ""
+
+    # --- Parse JSON from response ---
+    extracted_data: dict | None = None
+    # Strip markdown fences if the model added them despite instructions
+    clean = re.sub(r"```(?:json)?\s*", "", reply).strip().rstrip("`").strip()
+    match = re.search(r"\{[\s\S]+\}", clean)
+    if match:
+        try:
+            extracted_data = json.loads(match.group(0))
+            logger.info("run_extraction: JSON parsed successfully")
+        except json.JSONDecodeError as e:
+            logger.warning("run_extraction: JSON parse failed (%s) — falling back to null schema", e)
+
+    if extracted_data is None:
+        logger.warning("run_extraction: no valid JSON in response — writing null schema")
+        extracted_data = dict(_NULL_SCHEMA)
+        extracted_data["metadata"] = {
+            "source_files":   source_files,
+            "missing_fields": ["all — JSON parse failed; check model response"],
+            "extracted_at":   date.today().isoformat(),
+        }
+
+    # Ensure metadata fields are populated from what we know
+    if "metadata" not in extracted_data or not isinstance(extracted_data.get("metadata"), dict):
+        extracted_data["metadata"] = {}
+    extracted_data["metadata"].setdefault("source_files", source_files)
+    extracted_data["metadata"].setdefault("extracted_at", date.today().isoformat())
+
+    # --- Save JSON ---
+    json_text = json.dumps(extracted_data, indent=2)
+    workspace_service.write_file("Financials/extracted_data.json", json_text)
+    logger.info("run_extraction: saved Financials/extracted_data.json (%d bytes)", len(json_text))
+
+    # --- Generate and save markdown summary (pure Python — no AI call) ---
+    markdown_text = _build_extraction_markdown(extracted_data, source_files)
+    workspace_service.write_file("Financials/financial_data_summary.md", markdown_text)
+    logger.info("run_extraction: saved Financials/financial_data_summary.md")
+
+    _elapsed = int((time.time() - _start) * 1000)
+    event_bus.publish({"type": "agent_done", "agent_name": "extraction",
+                       "elapsed_ms": _elapsed, "session_id": session_id})
+    event_bus.publish({"type": "agent_saved", "agent_name": "extraction",
+                       "saved_to": "Financials/extracted_data.json", "session_id": session_id})
+
+    fy_str = ", ".join(extracted_data.get("fiscal_years") or []) or "unknown fiscal years"
+    missing_count = len((extracted_data.get("metadata") or {}).get("missing_fields") or [])
+    confirmation = (
+        f"Processed {len(source_files)} document(s). "
+        f"Extracted fiscal years: {fy_str}. "
+        f"Missing fields: {missing_count}."
+    )
+    return {"reply": confirmation, "saved_to": "Financials/extracted_data.json"}
+
+
 def _load_context(context_folders: list[str], query: str = "") -> str:
     """
     Load workspace context for agent prompts.
@@ -415,6 +743,12 @@ def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> s
 
 # Default run prompts for each pipeline step
 _PIPELINE_PROMPTS: dict[str, str] = {
+    "extraction": (
+        "Run Financial Data Extraction Agent — read all uploaded financial documents from the "
+        "Financials, Tax Returns, and Guarantors folders, parse every financial line item into "
+        "the canonical schema, and save structured output to Financials/extracted_data.json and "
+        "Financials/financial_data_summary.md for use by all downstream analysis agents."
+    ),
     "financial": (
         "Run Financial Analysis Agent — generate a comprehensive financial analysis of all "
         "uploaded documents including leverage, liquidity, collateral, and guarantor review. "
@@ -453,8 +787,15 @@ def run_pipeline_stream(session_id: str, message: str = ""):
     steps_done = 0
     steps_failed = 0
 
+    # Fresh thread ID per pipeline run prevents Orchestrate server-side thread
+    # accumulation across multiple runs sharing the same user session ID.
+    pipeline_thread_id = str(uuid.uuid4())
+
     yield json.dumps({"type": "pipeline_start", "total": total}) + "\n"
-    logger.info("agent_service.run_pipeline_stream: started session=%s", session_id)
+    logger.info(
+        "agent_service.run_pipeline_stream: started session=%s thread=%s",
+        session_id, pipeline_thread_id,
+    )
 
     for i, agent_name in enumerate(PIPELINE_SEQUENCE):
         step_num = i + 1
@@ -475,18 +816,25 @@ def run_pipeline_stream(session_id: str, message: str = ""):
 
         step_start = time.time()
         try:
-            prompt = message or _PIPELINE_PROMPTS.get(
-                agent_name,
-                f"Run {display_name} — generate comprehensive analysis.",
-            )
-            result = run(
-                agent_name=agent_name,
-                message=prompt,
-                session_id=session_id,
-                messages=[],        # standalone call — no conversation history
-                save_to_workspace=True,
-                save_path=None,
-            )
+            # Extraction agent uses the context-injection path (no tool calls).
+            # All other agents use the standard run() path.
+            # Both use pipeline_thread_id so each run gets a clean Orchestrate thread.
+            if agent_name == "extraction":
+                result = run_extraction(session_id, thread_id=pipeline_thread_id)
+            else:
+                prompt = message or _PIPELINE_PROMPTS.get(
+                    agent_name,
+                    f"Run {display_name} — generate comprehensive analysis.",
+                )
+                result = run(
+                    agent_name=agent_name,
+                    message=prompt,
+                    session_id=session_id,
+                    messages=[],        # standalone call — no conversation history
+                    save_to_workspace=True,
+                    save_path=None,
+                    thread_id=pipeline_thread_id,
+                )
             elapsed = int((time.time() - step_start) * 1000)
             reply_preview = (result["reply"] or "")[:200].replace("\n", " ")
             steps_done += 1

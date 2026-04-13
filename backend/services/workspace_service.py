@@ -111,13 +111,21 @@ def write_binary(relative_path: str, content: bytes) -> None:
 def delete_file(relative_path: str) -> None:
     if _use_cos():
         from services import cos_service
-        return cos_service.delete_file(relative_path)
-    path = resolve_path(relative_path)
-    if not path.exists():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
-    path.unlink()
+        cos_service.delete_file(relative_path)
+    else:
+        path = resolve_path(relative_path)
+        if not path.exists():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
+        path.unlink()
     logger.info("delete_file: %s", relative_path)
+
+    # Evict from embedding index so stale chunks cannot be returned to agents
+    try:
+        from services import embeddings_service
+        embeddings_service.remove_file(relative_path)
+    except Exception as e:
+        logger.debug("delete_file: embeddings eviction skipped — %s", e)
 
 
 def create_folder(relative_path: str) -> None:

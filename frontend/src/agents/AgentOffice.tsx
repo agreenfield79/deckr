@@ -13,6 +13,12 @@ interface AgentCard {
   activeColor: string
 }
 
+// Pre-processing card — rendered full-width above the 2×2 analytical grid
+const EXTRACTION_CARD: AgentCard = {
+  key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
+}
+
+// Analytical pipeline cards — rendered in a 2×2 grid
 const AGENT_CARDS: AgentCard[] = [
   { key: 'financial', label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
   { key: 'risk',      label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
@@ -165,6 +171,23 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
       {/* Card grid */}
       {!collapsed && (
         <div className="px-2 py-2 bg-[#f9f9f9]">
+          {/* Pre-processing — Extraction Agent, full-width above the analytical grid */}
+          <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mb-1 px-0.5">
+            Pre-processing
+          </p>
+          <div className="mb-2">
+            <AgentStatusCard
+              card={EXTRACTION_CARD}
+              status={agentActivity[EXTRACTION_CARD.key]?.status ?? 'idle'}
+              pipelineStatus={pipelineByAgent.current[EXTRACTION_CARD.key]?.status}
+              since={agentActivity[EXTRACTION_CARD.key]?.since}
+            />
+          </div>
+
+          {/* Analysis — 2×2 grid */}
+          <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mb-1 px-0.5">
+            Analysis
+          </p>
           <div className="grid grid-cols-2 gap-1.5">
             {AGENT_CARDS.map((card) => {
               const activity = agentActivity[card.key]

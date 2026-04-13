@@ -31,15 +31,25 @@ def get_registry():
     # Fetch live Orchestrate agents — falls back to [] on any error
     from services import orchestrate_client as oc
     live_agents = oc.list_agents()
-    # Build a set of live agent names for fast lookup (Orchestrate uses display names)
+
+    # Primary match: UUID — most reliable, works regardless of name convention
+    live_ids = {a.get("id", "").lower() for a in live_agents}
+
+    # Fallback match: name/display_name string comparison (for agents without UUIDs in .env)
     live_names = {a.get("name", "").lower() for a in live_agents}
     live_names |= {a.get("display_name", "").lower() for a in live_agents}
 
     # Annotate each static agent with orchestrate_live status
     for agent in static:
+        agent_name = agent.get("name", "")
+        configured_id = (oc._AGENT_ID_MAP.get(agent_name) or "").lower()
         display = agent.get("display_name", "").lower()
-        name = agent.get("name", "").lower()
-        agent["orchestrate_live"] = display in live_names or name in live_names
+        name = agent_name.lower()
+        agent["orchestrate_live"] = (
+            bool(configured_id and configured_id in live_ids)
+            or display in live_names
+            or name in live_names
+        )
 
     logger.info(
         "registry: %d agents returned (%d confirmed live in Orchestrate)",

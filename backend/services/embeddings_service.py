@@ -199,6 +199,34 @@ def update_file(rel_path: str, text: str) -> None:
         logger.error("embeddings_service: failed to index %s — %s", rel_path, e)
 
 
+def remove_file(rel_path: str) -> None:
+    """
+    Evict a file's chunks from the in-memory index and persist the change.
+
+    Called by workspace_service.delete_file() so that stale indexed content
+    from deleted files cannot be returned to agents in future context lookups.
+    Also removes the sidecar path variant (rel_path + ".extracted.json") if
+    the index entry was stored under the source key (COS sidecar convention).
+    No-op when ENABLE_EMBEDDINGS=false or the path is not in the index.
+    """
+    if os.getenv("ENABLE_EMBEDDINGS", "false").lower() != "true":
+        return
+
+    index = _load_index()
+    removed = False
+
+    for key in [rel_path, rel_path + ".extracted.json"]:
+        if key in index:
+            del index[key]
+            removed = True
+            logger.info("embeddings_service.remove_file: evicted %s", key)
+
+    if removed:
+        global _INDEX_DIRTY
+        _INDEX_DIRTY = True
+        _save_index()
+
+
 def build_index(force: bool = False) -> int:
     """
     Build or refresh the embedding index.

@@ -78,6 +78,26 @@ npm run dev
 
 The app runs at `http://localhost:5173`. The Vite dev server proxies all `/api/*` calls to `http://localhost:8000`.
 
+### ngrok (required for Orchestrate tool calls)
+
+IBM watsonx Orchestrate calls tool endpoints over a public HTTPS URL. Use ngrok to expose the local backend during development.
+
+```powershell
+# Start the backend first, then in a separate terminal:
+ngrok http 8000 --domain=<your-static-domain>.ngrok-free.dev
+```
+
+Verify the tunnel is up:
+
+```powershell
+Invoke-RestMethod -Uri "https://<your-static-domain>.ngrok-free.dev/api/health" `
+  -Headers @{ "ngrok-skip-browser-warning" = "true" }
+```
+
+- The static domain is set in `backend/tools_openapi.yaml` under `servers.url`
+- ngrok must be running whenever Orchestrate agents invoke tools
+- Keep backend → ngrok → Orchestrate in that start order
+
 ---
 
 ## Environment Variables

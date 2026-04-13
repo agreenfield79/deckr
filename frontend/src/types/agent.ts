@@ -1,4 +1,5 @@
 export type AgentName =
+  | 'extraction'
   | 'packaging'
   | 'financial'
   | 'risk'

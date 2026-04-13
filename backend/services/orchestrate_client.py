@@ -17,10 +17,11 @@ _orchestrate_token_cache = TokenCache(api_key_env_var="ORCHESTRATE_API_KEY")
 # Values are the UUIDs assigned by Orchestrate when each agent is deployed.
 # coordination is intentionally omitted — future Lender RFP agent, not yet deployed.
 _AGENT_ID_MAP: dict[str, str | None] = {
-    "packaging": os.getenv("ORCHESTRATE_AGENT_ID_PACKAGING"),
-    "financial": os.getenv("ORCHESTRATE_AGENT_ID_FINANCIAL"),
-    "risk":      os.getenv("ORCHESTRATE_AGENT_ID_RISK"),
-    "review":    os.getenv("ORCHESTRATE_AGENT_ID_REVIEW"),
+    "extraction": os.getenv("ORCHESTRATE_AGENT_ID_EXTRACTION"),
+    "packaging":  os.getenv("ORCHESTRATE_AGENT_ID_PACKAGING"),
+    "financial":  os.getenv("ORCHESTRATE_AGENT_ID_FINANCIAL"),
+    "risk":       os.getenv("ORCHESTRATE_AGENT_ID_RISK"),
+    "review":     os.getenv("ORCHESTRATE_AGENT_ID_REVIEW"),
 }
 
 
@@ -33,7 +34,12 @@ def _get_base_url() -> str:
     return url.rstrip("/")
 
 
-def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict:
+def invoke_agent(
+    agent_name: str,
+    messages: list[dict],
+    session_id: str,
+    thread_id: str | None = None,
+) -> dict:
     """
     Invoke a deployed Orchestrate agent via REST API.
 
@@ -44,9 +50,9 @@ def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict
     message, prior turns included, current message appended. This is more reliable
     than relying solely on X-IBM-THREAD-ID server-side thread memory.
 
-    Memory: X-IBM-THREAD-ID = session_id is still sent for any supplemental
-    server-side memory, but conversation continuity is ensured by the explicit
-    messages array.
+    thread_id: passed as X-IBM-THREAD-ID. Should be unique per pipeline run
+    (not per user session) to prevent server-side thread accumulation across
+    multiple runs from confusing agents. Defaults to session_id if not provided.
     """
     agent_id = _AGENT_ID_MAP.get(agent_name)
     if not agent_id:
@@ -65,7 +71,7 @@ def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict
         token = _orchestrate_token_cache.get_token()
         headers = {
             "Authorization": f"Bearer {token}",
-            "X-IBM-THREAD-ID": session_id,
+            "X-IBM-THREAD-ID": thread_id or session_id,
             "Content-Type": "application/json",
         }
         payload = {
@@ -84,8 +90,8 @@ def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict
         tool_calls = choice_msg.get("tool_calls") or []
 
         logger.info(
-            "orchestrate.invoke: agent=%s session=%s elapsed=%dms tool_calls=%d",
-            agent_name, session_id, elapsed_ms, len(tool_calls),
+            "orchestrate.invoke: agent=%s session=%s thread=%s elapsed=%dms tool_calls=%d",
+            agent_name, session_id, thread_id or session_id, elapsed_ms, len(tool_calls),
         )
         return {"reply": reply, "tool_calls": tool_calls}
 

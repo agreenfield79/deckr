@@ -5,6 +5,21 @@ from fastapi import HTTPException
 logger = logging.getLogger("deckr.agent_registry")
 
 AGENTS: dict[str, dict] = {
+    "extraction": {
+        "display_name":    "Financial Data Extraction Agent",
+        "system_prompt":   "prompts/extraction_agent.txt",
+        # Empty: context is pre-loaded by run_extraction() via _build_extraction_context(),
+        # which reads sidecar files directly from COS.  _load_context() is not called
+        # for this agent — the pipeline branches to run_extraction() instead of run().
+        "context_folders": [],
+        "output_path":     "Financials/extracted_data.json",
+        "model":           "granite",
+        "mode":            "generate",
+        "conversational":  False,
+        # orchestrate_tool_save removed: run_extraction() saves both output files
+        # directly after parsing the Orchestrate response.  No save_to_workspace
+        # tool call is made or expected.
+    },
     "packaging": {
         "display_name":    "Packaging Agent",
         "system_prompt":   "prompts/packaging_agent.txt",
