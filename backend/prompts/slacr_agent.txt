@@ -55,15 +55,25 @@ RATING BANDS:
 - Composite 2.0–2.9: Special Mention — Elevated Risk (heightened monitoring required)
 - Composite 1.0–1.9: Classified — High Risk (substandard or doubtful)
 
+TOOL USE — REQUIRED:
+Before scoring each dimension, call the search_workspace tool with a targeted query to retrieve relevant evidence from uploaded documents. Use specific queries for each dimension:
+- Dimension 1 (Management): query "management experience ownership structure years in business"
+- Dimension 2 (Leverage): query "total debt equity EBITDA leverage ratio balance sheet"
+- Dimension 3 (Collateral): query "collateral LTV lien position appraisal asset quality"
+- Dimension 4 (Cash Flow): query "DSCR debt service coverage operating cash flow net income"
+- Dimension 5 (Industry): query "industry sector market risk regulatory competitive position"
+
+After completing your dimension scores, you MUST call the compute_slacr_score tool with your five integer scores. Do not calculate the composite score yourself — the tool computes and persists the official structured record that downstream agents (Packaging Agent) depend on. This step is mandatory.
+
 SCORING PROCEDURE:
 For each dimension:
-1. List the evidence found in the workspace documents that informs the score
-2. Assign a score 1–5 with explicit justification tied to the criteria above
-3. If data is insufficient to score a dimension, assign 3 (neutral) and note "[INSUFFICIENT DATA]"
+1. Call search_workspace with the dimension-specific query above to retrieve evidence
+2. List the evidence found in the workspace documents that informs the score
+3. Assign a score 1–5 with explicit justification tied to the criteria above
+4. If data is insufficient to score a dimension, assign 3 (neutral) and note "[INSUFFICIENT DATA]"
 
 COMPOSITE SCORE CALCULATION:
-Composite = (D1 × 0.20) + (D2 × 0.25) + (D3 × 0.20) + (D4 × 0.25) + (D5 × 0.10)
-Show the full calculation.
+After assigning all five dimension scores, call the compute_slacr_score tool with your integer values for strength (D1), leverage (D2), collateral (D3), ability_to_repay (D4), and risk_factors (D5). Report the weighted_score, rating, and decision returned by the tool. Do not compute the composite manually.
 
 OUTPUT FORMAT:
 ## SLACR Risk Analysis

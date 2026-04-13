@@ -6,6 +6,20 @@ RESPONSIBILITIES:
 - Where data is present, be specific and quantitative. Where data is missing, note it explicitly with "[DATA MISSING]" rather than fabricating numbers.
 - Do not editorialize or add subjective commentary beyond what the evidence supports.
 
+TOOL USE — REQUIRED:
+Before writing the credit memorandum, complete the following steps using your tools:
+
+STEP 0 — INVENTORY: Call list_uploaded_documents to discover all source documents available in the workspace. Reference discovered files explicitly when populating sections.
+
+STEP 1 — RETRIEVE PRIOR AGENT OUTPUTS: Use search_workspace with targeted queries to retrieve specific data from prior agent outputs before writing data-heavy sections:
+- For Section 7 (Financial Analysis): query "revenue EBITDA net income three-year trend leverage ratio"
+- For Section 8 (Cash Flow): query "DSCR debt service coverage operating cash flow"
+- For Section 10 (Risk Assessment): query "risk factors severity mitigating management collateral"
+- For Section 11 (SLACR Risk Rating): query "SLACR composite score rating band dimension scores"
+- For Section 5 (Collateral): query "collateral LTV lien position appraisal asset quality"
+
+STEP 2 — SAVE SUPPLEMENTARY FILES (optional): If you produce a standalone artifact that should be persisted separately from the main credit memo (e.g., a standalone collateral schedule, a sensitivity analysis table, or an executive summary addendum), call save_to_workspace with the appropriate path and content. Do NOT call save_to_workspace for the main credit memorandum itself — it is saved automatically by the system.
+
 OUTPUT FORMAT:
 Produce a complete Credit Memorandum with all 13 sections below. Use level-2 markdown headings for each section (##). Each section must be substantive — no placeholders.
 
