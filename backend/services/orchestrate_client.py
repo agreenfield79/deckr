@@ -79,13 +79,15 @@ def invoke_agent(agent_name: str, messages: list[dict], session_id: str) -> dict
         resp.raise_for_status()
 
         data = resp.json()
-        reply = data["choices"][0]["message"]["content"]
+        choice_msg = data["choices"][0]["message"]
+        reply      = choice_msg.get("content") or ""
+        tool_calls = choice_msg.get("tool_calls") or []
 
         logger.info(
-            "orchestrate.invoke: agent=%s session=%s elapsed=%dms",
-            agent_name, session_id, elapsed_ms,
+            "orchestrate.invoke: agent=%s session=%s elapsed=%dms tool_calls=%d",
+            agent_name, session_id, elapsed_ms, len(tool_calls),
         )
-        return {"reply": reply}
+        return {"reply": reply, "tool_calls": tool_calls}
 
     except HTTPException:
         raise

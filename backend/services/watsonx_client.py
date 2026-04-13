@@ -36,8 +36,14 @@ def _resolve_model(model_key: str) -> str:
     return SUPPORTED_MODELS.get(model_key, SUPPORTED_MODELS["granite"])
 
 
-def chat(messages: list[dict], model_key: str, params: dict) -> str:
-    """Multi-turn conversation via the watsonx /text/chat endpoint."""
+def chat(messages: list[dict], model_key: str, params: dict, tools: list[dict] | None = None) -> dict:
+    """
+    Multi-turn conversation via the watsonx /text/chat endpoint.
+
+    When `tools` is provided the request includes tool definitions and the raw
+    response is returned as a dict so the caller can inspect tool_calls.
+    When `tools` is None the plain reply string is returned inside {"reply": ...}.
+    """
     token = token_cache.get_token()
     url = f"{_base_url()}/ml/v1/text/chat?version={_api_version()}"
     body = {
@@ -49,6 +55,8 @@ def chat(messages: list[dict], model_key: str, params: dict) -> str:
             "time_limit": params.get("time_limit", 30000),
         },
     }
+    if tools:
+        body["tools"] = tools
     t0 = time.time()
     try:
         resp = requests.post(
@@ -59,8 +67,13 @@ def chat(messages: list[dict], model_key: str, params: dict) -> str:
         )
         elapsed = int((time.time() - t0) * 1000)
         resp.raise_for_status()
+        data = resp.json()
         logger.info("watsonx.chat: model=%s elapsed=%dms", model_key, elapsed)
-        return resp.json()["choices"][0]["message"]["content"]
+        choice_msg = data["choices"][0]["message"]
+        return {
+            "reply":      choice_msg.get("content") or "",
+            "tool_calls": choice_msg.get("tool_calls") or [],
+        }
     except HTTPException:
         raise
     except Exception as e:

@@ -22,27 +22,18 @@ def run(
     save_to_workspace: bool,
     save_path: str | None,
     action_type: str | None = None,
+    tools: list[dict] | None = None,
 ) -> dict:
     agent = agent_registry.get_agent(agent_name)
     use_orchestrate = os.getenv("USE_ORCHESTRATE", "false").lower() == "true"
 
     logger.info(
-        "agent_service.run: agent=%s session=%s mode=%s orchestrate=%s action=%s",
-        agent_name, session_id, agent["mode"], use_orchestrate, action_type or "default",
+        "agent_service.run: agent=%s session=%s mode=%s orchestrate=%s action=%s tools=%d",
+        agent_name, session_id, agent["mode"], use_orchestrate,
+        action_type or "default", len(tools) if tools else 0,
     )
 
     if use_orchestrate:
-        # Orchestrate's chat/completions API processes only the last message in the
-        # messages array as the current user query — it does not use prior array items
-        # for conversation continuity the way OpenAI-compatible APIs do.
-        # X-IBM-THREAD-ID server-side memory is also unreliable across sessions.
-        #
-        # Solution: pack everything into a SINGLE human message:
-        #   1. Workspace context (capped at 10,000 chars)
-        #   2. Prior conversation turns formatted as inline text (capped at 4,000 chars)
-        #   3. Current user request
-        #
-        # This is session-agnostic and guaranteed to work regardless of API memory behavior.
         _MAX_CONTEXT_CHARS  = 10_000
         _MAX_HISTORY_CHARS  = 4_000
 
@@ -58,7 +49,6 @@ def run(
             )
         has_context = bool(context and context != "[No workspace documents found]")
 
-        # Build prior conversation block from messages (exclude last item = current message)
         prior_turns = messages[:-1] if messages else []
         history_block = ""
         if prior_turns:
@@ -66,7 +56,6 @@ def run(
             for m in prior_turns:
                 role_label = "User" if m.get("role") == "user" else "Assistant"
                 content = m.get("content", "")
-                # Truncate very long agent replies to keep the block manageable
                 if role_label == "Assistant" and len(content) > 800:
                     content = content[:800] + "\n[... reply truncated ...]"
                 lines.append(f"{role_label}: {content}")
@@ -79,7 +68,6 @@ def run(
                 len(prior_turns), agent_name,
             )
 
-        # Assemble the single message
         parts: list[str] = []
         if has_context:
             parts.append(f"--- WORKSPACE CONTEXT ---\n{context}")
@@ -101,7 +89,17 @@ def run(
         result = orchestrate_client.invoke_agent(agent_name, orchestrate_messages, session_id)
         reply = result["reply"]
 
-        # Save output to workspace with frontmatter — same behaviour as watsonx path
+        # Tool dispatch loop — Orchestrate path
+        tool_calls = result.get("tool_calls") or []
+        if tool_calls:
+            reply = _run_tool_dispatch(
+                agent_name=agent_name,
+                session_id=session_id,
+                messages=orchestrate_messages,
+                result=result,
+                invoke_fn=lambda msgs: orchestrate_client.invoke_agent(agent_name, msgs, session_id),
+            )
+
         effective_path = save_path or (agent["output_path"] if save_to_workspace else None)
         if save_to_workspace and effective_path:
             content = _wrap_with_frontmatter(reply, agent_name, effective_path)
@@ -110,16 +108,50 @@ def run(
 
         return {"reply": reply, "saved_to": effective_path if save_to_workspace else None}
 
+    # --- Direct watsonx.ai path ---
     context = _load_context(agent["context_folders"], message)
 
-    if agent["mode"] == "generate":
+    if agent["mode"] == "generate" and not tools:
+        # Standard generation — no tool calling
         if action_type:
             prompt = _build_action_prompt(action_type, context, message)
         else:
             prompt = _build_prompt(agent, context, message)
         reply = watsonx_client.generate(prompt, agent["model"], {})
+
     else:
-        reply = watsonx_client.chat(messages, agent["model"], {})
+        # Chat path — required for tool calling; also used for mode=chat agents
+        # When tools are provided with a generate-mode agent, we switch to the
+        # /text/chat endpoint which supports function calling.
+        chat_messages = list(messages) if messages else []
+        if not chat_messages:
+            system_prompt_path = agent.get("system_prompt", "")
+            from pathlib import Path as _Path
+            sp = _Path(system_prompt_path)
+            system_content = sp.read_text(encoding="utf-8") if sp.exists() else (
+                f"You are the {agent['display_name']}. "
+                "Assist with commercial loan underwriting analysis."
+            )
+            if context and context != "[No workspace documents found]":
+                system_content += f"\n\n--- WORKSPACE CONTEXT ---\n{context}"
+            chat_messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user",   "content": message},
+            ]
+
+        result = watsonx_client.chat(chat_messages, agent["model"], {}, tools=tools or None)
+        reply = result["reply"]
+
+        # Tool dispatch loop — direct path
+        tool_calls = result.get("tool_calls") or []
+        if tool_calls:
+            reply = _run_tool_dispatch(
+                agent_name=agent_name,
+                session_id=session_id,
+                messages=chat_messages,
+                result=result,
+                invoke_fn=lambda msgs: watsonx_client.chat(msgs, agent["model"], {}, tools=tools),
+            )
 
     effective_path = save_path or (agent["output_path"] if save_to_workspace else None)
 
@@ -154,6 +186,86 @@ def run_action_save(
             "agent_service: background action '%s' failed — %s",
             action_type, type(e).__name__,
         )
+
+
+def _run_tool_dispatch(
+    agent_name: str,
+    session_id: str,
+    messages: list[dict],
+    result: dict,
+    invoke_fn,
+    max_iterations: int = 5,
+) -> str:
+    """
+    Execute the tool dispatch loop shared by both Orchestrate and direct watsonx paths.
+
+    For each tool_calls entry in `result`:
+      1. Route to tool_service.dispatch()
+      2. Append assistant message (with tool_calls) + tool result messages
+      3. Re-invoke the agent
+      4. Repeat until no tool_calls remain or max_iterations reached
+
+    Returns the final plain-text reply.
+    """
+    import json as _json
+    from services import tool_service
+
+    current_result = result
+    current_messages = list(messages)
+    iteration = 0
+
+    while True:
+        tool_calls = current_result.get("tool_calls") or []
+        if not tool_calls or iteration >= max_iterations:
+            break
+        iteration += 1
+
+        # Append assistant's tool-call message to the conversation
+        current_messages.append({
+            "role":       "assistant",
+            "content":    current_result.get("reply") or "",
+            "tool_calls": tool_calls,
+        })
+
+        # Execute each tool call and collect results
+        tool_result_msgs: list[dict] = []
+        for tc in tool_calls:
+            fn        = tc.get("function", {})
+            tool_name = fn.get("name", "")
+            call_id   = tc.get("id", "")
+            try:
+                args        = _json.loads(fn.get("arguments", "{}"))
+                tool_output = tool_service.dispatch(tool_name, args)
+                content     = _json.dumps(tool_output) if not isinstance(tool_output, str) else tool_output
+                logger.info(
+                    "agent_service: tool '%s' dispatched (iter=%d agent=%s result_len=%d)",
+                    tool_name, iteration, agent_name, len(content),
+                )
+            except Exception as e:
+                content = f"Error executing tool '{tool_name}': {e}"
+                logger.warning(
+                    "agent_service: tool '%s' failed (iter=%d agent=%s) — %s",
+                    tool_name, iteration, agent_name, e,
+                )
+
+            tool_result_msgs.append({
+                "role":         "tool",
+                "tool_call_id": call_id,
+                "content":      content,
+            })
+
+        current_messages.extend(tool_result_msgs)
+
+        # Re-invoke agent with updated conversation
+        current_result = invoke_fn(current_messages)
+
+    if iteration >= max_iterations:
+        logger.warning(
+            "agent_service: tool dispatch reached max iterations (%d) for agent=%s session=%s",
+            max_iterations, agent_name, session_id,
+        )
+
+    return current_result.get("reply") or ""
 
 
 def _load_context(context_folders: list[str], query: str = "") -> str:

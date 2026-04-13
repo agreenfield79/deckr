@@ -74,12 +74,7 @@ def compute(slacr_input: SlacrInput, ai_narrative: str = "") -> SlacrOutput:
 
 
 def save(output: SlacrOutput) -> None:
-    root = workspace_service._get_root()
-    slacr_dir = root / "SLACR"
-    slacr_dir.mkdir(parents=True, exist_ok=True)
-    (slacr_dir / "slacr.json").write_text(
-        output.model_dump_json(indent=2), encoding="utf-8"
-    )
+    workspace_service.write_file("SLACR/slacr.json", output.model_dump_json(indent=2))
     logger.info("slacr.save: SLACR/slacr.json written (score=%.2f)", output.weighted_score)
 
 

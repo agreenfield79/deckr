@@ -141,3 +141,45 @@ def rename_file(old_path: str, new_path: str) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     src.rename(dst)
     logger.info("rename_file: %s → %s", old_path, new_path)
+
+
+def list_folder(folder: str) -> list[dict]:
+    """
+    List files in a workspace folder.  COS-aware.
+
+    Returns a list of dicts: {name, path, size, modified, extracted}.
+    Skips .extracted.json sidecars — those are internal artifacts.
+    Returns [] if the folder does not exist or is empty.
+    """
+    if _use_cos():
+        from services import cos_service
+        try:
+            return cos_service.list_folder(folder)
+        except Exception as e:
+            logger.warning("list_folder: COS list failed for '%s' — %s", folder, e)
+            return []
+
+    root = _get_root()
+    target = resolve_path(folder)
+
+    if not target.exists() or not target.is_dir():
+        return []
+
+    results = []
+    for entry in sorted(target.iterdir(), key=lambda p: p.name):
+        if not entry.is_file():
+            continue
+        if entry.name.endswith(".extracted.json"):
+            continue
+        extracted = (entry.parent / (entry.name + ".extracted.json")).exists()
+        rel_path = str(entry.relative_to(root)).replace("\\", "/")
+        results.append({
+            "name": entry.name,
+            "path": rel_path,
+            "size": entry.stat().st_size,
+            "modified": entry.stat().st_mtime,
+            "extracted": extracted,
+        })
+
+    logger.debug("list_folder: %d files in '%s'", len(results), folder)
+    return results

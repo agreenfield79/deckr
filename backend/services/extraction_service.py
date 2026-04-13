@@ -21,6 +21,8 @@ import logging
 import os
 from pathlib import Path
 
+import requests
+
 logger = logging.getLogger("deckr.extraction_service")
 
 _EXTRACTABLE_TEXT_EXT = {".txt", ".md", ".csv", ".tsv"}
@@ -217,16 +219,74 @@ def _extract_pdf(content: bytes) -> str | None:
         if text:
             return text
         logger.warning(
-            "extraction._extract_pdf: all three extractors found no text — "
-            "PDF is likely image-based (scanned). OCR required (Phase 15: watsonx Document Understanding)."
+            "extraction._extract_pdf: all three local extractors found no text — "
+            "PDF is likely image-based (scanned). Attempting WDU OCR (Pass 4)."
         )
-        return None
     except ImportError:
         logger.warning(
             "extraction._extract_pdf: PyMuPDF not installed — run: pip install pymupdf. "
-            "All text extractors exhausted; PDF may be image-based."
+            "Falling through to WDU OCR pass."
         )
-        return None
     except Exception as e:
         logger.error("extraction._extract_pdf: PyMuPDF error — %s", e)
+
+    # --- Pass 4: IBM watsonx Document Understanding (OCR for scanned / image-based PDFs) ---
+    # Triggered only when ENABLE_WDU=true and all three local passes returned empty.
+    # Verify exact endpoint at provisioning time against the WDU API reference:
+    #   POST {WDU_URL}/v2/analyze   (Bearer IAM token auth)
+    if os.getenv("ENABLE_WDU", "false").lower() != "true":
+        logger.warning(
+            "extraction._extract_pdf: all extractors exhausted and ENABLE_WDU=false. "
+            "PDF is unextractable without OCR. Set ENABLE_WDU=true after provisioning WDU."
+        )
+        return None
+
+    wdu_url = os.getenv("WDU_URL", "").rstrip("/")
+    wdu_key = os.getenv("WDU_API_KEY", "")
+    if not wdu_url or not wdu_key:
+        logger.error(
+            "extraction._extract_pdf: ENABLE_WDU=true but WDU_URL or WDU_API_KEY not set."
+        )
+        return None
+
+    try:
+        from services.token_cache import TokenCache
+        _wdu_token_cache = TokenCache(api_key_env_var="WDU_API_KEY")
+        token = _wdu_token_cache.get_token()
+
+        endpoint = f"{wdu_url}/v2/analyze"
+        resp = requests.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/pdf",
+            },
+            data=content,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Parse elements array — WDU returns text spans and table cells
+        parts: list[str] = []
+        for element in data.get("elements", []):
+            text_val = element.get("text", "")
+            if text_val and text_val.strip():
+                parts.append(text_val.strip())
+
+        text = "\n".join(parts).strip()
+        if text:
+            logger.info(
+                "extraction._extract_pdf: WDU OCR pass 4 extracted %d chars", len(text)
+            )
+            return text
+
+        logger.warning(
+            "extraction._extract_pdf: WDU OCR returned no text — "
+            "document may be fully graphical or encrypted."
+        )
+        return None
+
+    except Exception as e:
+        logger.error("extraction._extract_pdf: WDU OCR pass 4 failed — %s", e)
         return None

@@ -83,6 +83,7 @@ def invoke_agent(agent_name: str, body: AgentRequest) -> AgentResponse:
         save_to_workspace=body.save_to_workspace or bool(body.action_type),
         save_path=save_path,
         action_type=body.action_type,
+        tools=body.tools,
     )
     return AgentResponse(
         reply=result["reply"],
@@ -113,6 +114,7 @@ def run_agent(
         messages=body.messages,
         save_to_workspace=True,
         save_path=save_path,
+        tools=body.tools,
     )
 
     # Financial agent: queue individual action analyses as background tasks
