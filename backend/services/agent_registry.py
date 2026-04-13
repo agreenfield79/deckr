@@ -5,6 +5,22 @@ from fastapi import HTTPException
 logger = logging.getLogger("deckr.agent_registry")
 
 AGENTS: dict[str, dict] = {
+    "collateral": {
+        "display_name":    "Collateral Agent",
+        "system_prompt":   "prompts/collateral_agent.txt",
+        # Collateral documents live in Collateral/; SLACR/ seeds any prior
+        # collateral characterization from the SLACR analysis.
+        "context_folders": ["Collateral/", "SLACR/"],
+        "output_path":     "Agent Notes/collateral_analysis.md",
+        "model":           "granite",
+        "mode":            "generate",
+        "conversational":  False,
+        # Agent calls save_to_workspace via Orchestrate (saves full collateral_analysis.md),
+        # then returns a brief confirmation as reply.
+        # orchestrate_tool_save=True suppresses backend auto-save so the brief
+        # confirmation does not overwrite the full content the tool already wrote.
+        "orchestrate_tool_save": True,
+    },
     "industry": {
         "display_name":    "Industry Analysis Agent",
         "system_prompt":   "prompts/industry_agent.txt",

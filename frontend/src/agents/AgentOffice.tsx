@@ -18,14 +18,16 @@ const EXTRACTION_CARD: AgentCard = {
   key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
 }
 
-// Analytical pipeline cards — rendered in a 3-column grid (Phase 20+).
+// Analytical pipeline cards — rendered in a 3-column grid (Phase 21: 6 cards = 2×3).
 // Layout will be redesigned in Phase 22.5 when all 8 pipeline agents are present.
+// Parallel analysis agents (financial, industry, collateral) are grouped in the first two rows.
 const AGENT_CARDS: AgentCard[] = [
-  { key: 'financial', label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
-  { key: 'risk',      label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
-  { key: 'industry',  label: 'Industry',   abbr: 'In',  activeColor: 'ring-[#198038] bg-[#defbe6]' },
-  { key: 'packaging', label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
-  { key: 'review',    label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
+  { key: 'financial',  label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
+  { key: 'industry',   label: 'Industry',   abbr: 'In',  activeColor: 'ring-[#198038] bg-[#defbe6]' },
+  { key: 'collateral', label: 'Collateral', abbr: 'Co',  activeColor: 'ring-[#9f1853] bg-[#fff0f7]' },
+  { key: 'risk',       label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
+  { key: 'packaging',  label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
+  { key: 'review',     label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
 ]
 
 const LS_KEY = 'deckr:agentOfficeCollapsed'
