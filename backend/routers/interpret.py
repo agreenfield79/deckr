@@ -244,8 +244,9 @@ def _generate_template_narrative(result: dict) -> str:
         p5,
         "",
         "---",
-        "*This narrative was generated from the Neural SLACR model output. "
-        "Run the interpreter again after the AI agent completes to receive an enhanced narrative.*",
+        "*Generated with AI assistance (IBM watsonx). "
+        "All figures should be independently verified prior to "
+        "credit committee submission or lender distribution.*",
     ]
     return "\n".join(lines)
 

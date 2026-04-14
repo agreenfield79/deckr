@@ -904,6 +904,14 @@ def _build_action_prompt(action_type: str, context: str, message: str) -> str:
     )
 
 
+_AI_DISCLOSURE = (
+    "\n\n---\n"
+    "*Generated with AI assistance (IBM watsonx). "
+    "All figures should be independently verified prior to "
+    "credit committee submission or lender distribution.*"
+)
+
+
 def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> str:
     frontmatter = (
         f"---\n"
@@ -914,7 +922,10 @@ def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> s
         f"created: {date.today().isoformat()}\n"
         f"---\n\n"
     )
-    return frontmatter + content
+    # Append AI disclosure to Markdown outputs only — skip JSON files so that
+    # extracted_data.json and neural_slacr_output.json remain machine-parseable.
+    disclosure = _AI_DISCLOSURE if output_path.endswith(".md") else ""
+    return frontmatter + content + disclosure
 
 
 # ---------------------------------------------------------------------------

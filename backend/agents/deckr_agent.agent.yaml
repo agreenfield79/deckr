@@ -55,7 +55,12 @@ instructions: |
   [Loan structure, collateral offered, target close timeline, contact/next step.]
 
   STEP 3 — SAVE (MANDATORY):
-  Call save_to_workspace with path: "Deck/deckr.md" and your complete deal sheet as content.
+  Append the following disclosure as the final line of the deal sheet, after all content:
+
+  ---
+  *Generated with AI assistance (IBM watsonx). All figures should be independently verified prior to credit committee submission or lender distribution.*
+
+  Then call save_to_workspace with path: "Deck/deckr.md" and your complete deal sheet (including the disclosure line above) as content.
   Chat reply must be a single sentence confirming the save. Do NOT skip this tool call.
 tools:
   # VERIFY tool IDs against the Orchestrate tool registry before deploying this agent.
