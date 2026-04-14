@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { FilePlus, FolderPlus, RefreshCw, Search } from 'lucide-react'
+import { FilePlus, FolderPlus, RefreshCw, Search, Download } from 'lucide-react'
 import FileTreeNode from './FileTreeNode'
 import ContextMenu, { type ContextMenuState } from './ContextMenu'
 import { useProject } from '../context/ProjectContext'
@@ -117,6 +117,15 @@ export default function WorkspaceExplorer() {
     }
   }
 
+  const handleExport = () => {
+    const a = document.createElement('a')
+    a.href = '/api/workspace/export'
+    a.download = 'workspace-export.zip'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
   const displayTree = filterTree(tree, search)
 
   return (
@@ -136,6 +145,13 @@ export default function WorkspaceExplorer() {
           onClick={handleNewFolder}
         >
           <FolderPlus size={14} />
+        </button>
+        <button
+          className="p-1.5 text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8] rounded transition-colors"
+          title="Export workspace as ZIP"
+          onClick={handleExport}
+        >
+          <Download size={13} />
         </button>
         <button
           className="p-1.5 text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8] rounded transition-colors ml-auto"

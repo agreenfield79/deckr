@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ChevronDown,
   ChevronRight,
   Download,
+  Printer,
   RefreshCw,
   Edit3,
   Loader2,
@@ -54,6 +55,8 @@ export default function DeckTab() {
   const { refreshTree } = useProject()
   const { sessionId } = useSession()
   const { success: toastSuccess, error: toastError } = useToast()
+
+  const deckPrintRef = useRef<HTMLDivElement>(null)
 
   const [deckContent, setDeckContent] = useState<string | null>(null)
   const [sections, setSections] = useState<Record<string, string>>({})
@@ -163,6 +166,46 @@ export default function DeckTab() {
     })
   }
 
+  const handlePrint = () => {
+    const el = deckPrintRef.current
+    if (!el) return
+
+    const clone = el.cloneNode(true) as HTMLElement
+    clone.id = 'print-portal'
+    document.body.appendChild(clone)
+
+    const style = document.createElement('style')
+    style.id = 'print-portal-style'
+    style.textContent = `
+      @media print {
+        @page { size: letter portrait; margin: 0.65in 0.75in; }
+        body > *:not(#print-portal) { display: none !important; }
+        #print-portal {
+          display: block !important;
+          position: static !important;
+          left: auto !important;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: none !important;
+          background: white !important;
+        }
+        #print-portal h2, #print-portal table { break-inside: avoid; }
+      }
+    `
+    document.head.appendChild(style)
+
+    const cleanup = () => {
+      document.body.removeChild(clone)
+      document.head.removeChild(style)
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+
+    window.print()
+  }
+
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -242,6 +285,72 @@ export default function DeckTab() {
             <Download size={11} />
             Export
           </button>
+          <button
+            onClick={handlePrint}
+            title="Print or save as PDF"
+            className="flex items-center gap-1 px-2 py-1 text-xs text-white bg-[#0f62fe] hover:bg-[#0043ce] rounded transition-colors"
+          >
+            <Printer size={11} />
+            Save as PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Hidden flat-render print portal — off-screen, always rendered when deck is loaded */}
+      <div
+        ref={deckPrintRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: 0,
+          width: '768px',
+          background: 'white',
+          padding: '48px 64px',
+        }}
+      >
+        <div style={{ borderBottom: '2px solid #0f62fe', paddingBottom: '16px', marginBottom: '32px' }}>
+          <p style={{ fontSize: '10px', color: '#6f6f6f', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: '4px' }}>
+            Confidential
+          </p>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#161616' }}>Credit Memorandum</h1>
+          <p style={{ fontSize: '12px', color: '#525252', marginTop: '4px' }}>
+            Generated {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+
+        {sectionEntries.map(([name, content], idx) => {
+          const isPending = !content || content.startsWith('> **PENDING**')
+          return (
+            <div key={name} style={{ marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#161616', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px', marginBottom: '12px' }}>
+                {idx + 1}. {name}
+              </h2>
+              {isPending ? (
+                <p style={{ fontSize: '12px', color: '#a8a8a8', fontStyle: 'italic' }}>
+                  [Section pending — run agents to generate]
+                </p>
+              ) : (
+                <div style={{ fontSize: '14px' }}>
+                  <MarkdownViewer content={content} />
+                </div>
+              )}
+              {name.includes('Financial Analysis') && <RevenueEbitdaChart data={financials} />}
+              {(name === 'Leverage' || name.includes('Leverage & Capitalization')) && <LeverageChart data={financials} />}
+              {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
+                <>
+                  <SlacrRadarChart data={slacrData} />
+                  <SlacrScorePanel data={slacrData} />
+                </>
+              )}
+            </div>
+          )
+        })}
+
+        <div style={{ borderTop: '1px solid #e0e0e0', marginTop: '32px', paddingTop: '16px' }}>
+          <p style={{ fontSize: '10px', color: '#a8a8a8', textAlign: 'center' }}>
+            Generated by Deckr · Powered by IBM watsonx · Confidential and Proprietary
+          </p>
         </div>
       </div>
 

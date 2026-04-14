@@ -1,6 +1,19 @@
-import { CheckCircle, Clock, ArrowRight, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { CheckCircle, Clock, ArrowRight, RefreshCw, Printer } from 'lucide-react'
 import { useStatus } from '../hooks/useStatus'
+import { getDeck } from '../api/deck'
+import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TabId } from './TabBar'
+
+function parseSections(markdown: string): Record<string, string> {
+  const sections: Record<string, string> = {}
+  const regex = /## \d+\. (.+?)\n\n([\s\S]*?)(?=\n\n---|\n## \d+\.|$)/g
+  let match
+  while ((match = regex.exec(markdown)) !== null) {
+    sections[match[1].trim()] = match[2].trim()
+  }
+  return sections
+}
 
 interface StatusTabProps {
   onNavigate: (tab: TabId) => void
@@ -17,6 +30,71 @@ function motivate(percentage: number): string {
 export default function StatusTab({ onNavigate }: StatusTabProps) {
   const { items, percentage, loading, refresh } = useStatus()
 
+  const [printContent, setPrintContent] = useState<string>('')
+  const [printing, setPrinting] = useState(false)
+  const statusPrintRef = useRef<HTMLDivElement>(null)
+
+  const handlePrintAll = async () => {
+    setPrinting(true)
+    try {
+      const res = await getDeck()
+      if (!res.exists || !res.content) {
+        alert('No Credit Memorandum yet — run the agents to generate it first.')
+        return
+      }
+      setPrintContent(res.content)
+    } catch {
+      alert('Failed to load Credit Memorandum for printing.')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!printContent || !statusPrintRef.current) return
+
+    requestAnimationFrame(() => {
+      const el = statusPrintRef.current
+      if (!el) return
+
+      const clone = el.cloneNode(true) as HTMLElement
+      clone.id = 'print-portal'
+      document.body.appendChild(clone)
+
+      const style = document.createElement('style')
+      style.id = 'print-portal-style'
+      style.textContent = `
+        @media print {
+          @page { size: letter portrait; margin: 0.65in 0.75in; }
+          body > *:not(#print-portal) { display: none !important; }
+          #print-portal {
+            display: block !important;
+            position: static !important;
+            left: auto !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: white !important;
+          }
+          #print-portal h2, #print-portal table { break-inside: avoid; }
+        }
+      `
+      document.head.appendChild(style)
+
+      const cleanup = () => {
+        document.body.removeChild(clone)
+        document.head.removeChild(style)
+        window.removeEventListener('afterprint', cleanup)
+        setPrintContent('')
+      }
+      window.addEventListener('afterprint', cleanup)
+
+      window.print()
+    })
+  }, [printContent])
+
   const completeCount = items.filter((i) => i.complete).length
 
   return (
@@ -29,15 +107,26 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
             {motivate(percentage)}
           </p>
         </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          title="Re-check status"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[#525252] border border-[#c6c6c6] bg-white hover:bg-[#e0e0e0] rounded transition-colors disabled:opacity-50 shrink-0"
-        >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={handlePrintAll}
+            disabled={printing}
+            title="Print full deal package as PDF (bank track)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-white bg-[#0f62fe] hover:bg-[#0043ce] rounded transition-colors disabled:opacity-50"
+          >
+            <Printer size={11} className={printing ? 'animate-pulse' : ''} />
+            {printing ? 'Loading…' : 'Print All'}
+          </button>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            title="Re-check status"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[#525252] border border-[#c6c6c6] bg-white hover:bg-[#e0e0e0] rounded transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -68,6 +157,57 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Hidden flat-render print portal for Print All — bank track (memo.md) */}
+      <div
+        ref={statusPrintRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: 0,
+          width: '768px',
+          background: 'white',
+          padding: '48px 64px',
+        }}
+      >
+        {printContent && (
+          <>
+            <div style={{ borderBottom: '2px solid #0f62fe', paddingBottom: '16px', marginBottom: '32px' }}>
+              <p style={{ fontSize: '10px', color: '#6f6f6f', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: '4px' }}>
+                Confidential
+              </p>
+              <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#161616' }}>Credit Memorandum</h1>
+              <p style={{ fontSize: '12px', color: '#525252', marginTop: '4px' }}>
+                Generated {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
+
+            {Object.entries(parseSections(printContent)).map(([name, content], idx) => (
+              <div key={name} style={{ marginBottom: '32px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#161616', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px', marginBottom: '12px' }}>
+                  {idx + 1}. {name}
+                </h2>
+                {!content || content.startsWith('> **PENDING**') ? (
+                  <p style={{ fontSize: '12px', color: '#a8a8a8', fontStyle: 'italic' }}>
+                    [Section pending — run agents to generate]
+                  </p>
+                ) : (
+                  <div style={{ fontSize: '14px' }}>
+                    <MarkdownViewer content={content} />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{ borderTop: '1px solid #e0e0e0', marginTop: '32px', paddingTop: '16px' }}>
+              <p style={{ fontSize: '10px', color: '#a8a8a8', textAlign: 'center' }}>
+                Generated by Deckr · Powered by IBM watsonx · Confidential and Proprietary
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Checklist */}

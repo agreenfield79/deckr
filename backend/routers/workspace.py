@@ -1,6 +1,9 @@
+import io
 import logging
+import zipfile
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services import workspace_service
@@ -57,3 +60,22 @@ def rename_file(body: RenameRequest):
 def post_folder(body: CreateFolderRequest):
     workspace_service.create_folder(body.path)
     return {"created": True, "path": body.path}
+
+
+@router.get("/export")
+def export_workspace():
+    """ZIP the full workspace tree and stream it as a download."""
+    root = workspace_service._get_root()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if path.is_file():
+                arcname = str(path.relative_to(root)).replace("\\", "/")
+                zf.write(path, arcname)
+    buffer.seek(0)
+    logger.info("export_workspace: zipped %d files", sum(1 for _ in root.rglob("*") if _.is_file()))
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="workspace-export.zip"'},
+    )
