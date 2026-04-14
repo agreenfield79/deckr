@@ -3,6 +3,7 @@ kind: native
 name: industry_analysis_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
 style: react
+hide_reasoning: true
 description: |
   Researches the borrower's industry and market using web search. Produces a
   professional market analysis covering size, growth trends, competitive

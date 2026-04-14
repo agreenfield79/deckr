@@ -12,7 +12,8 @@ logger = logging.getLogger("deckr.watsonx_client")
 SUPPORTED_MODELS = {
     "granite":   "ibm/granite-3-8b-instruct",
     "llama-70b": "meta-llama/llama-3-3-70b-instruct",
-    "mistral":   "mistralai/mistral-large",
+    # "mistral" key removed — mistralai/mistral-large is out of scope for the
+    # IBM AI Experiential Learning Lab and must not be used in this project.
     "llama-3b":  "meta-llama/llama-3-2-3b-instruct",
 }
 

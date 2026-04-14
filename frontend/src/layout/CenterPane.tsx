@@ -10,7 +10,6 @@ import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
 import FinalTab from '../tabs/FinalTab'
 import StatusTab from '../tabs/StatusTab'
-import SlacrWorksheet from '../tabs/SlacrWorksheet'
 
 export default function CenterPane() {
   const { activeFile, closeFile, saveActiveFile, tree, treeLoading } = useProject()
@@ -49,14 +48,47 @@ export default function CenterPane() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'onboarding':  return <OnboardingTab />
-      case 'loan':        return <LoanRequestTab />
-      case 'documents':   return <DocumentsTab />
-      case 'research':    return <ResearchTab />
-      case 'deck':        return <DeckTab />
-      case 'final':       return <FinalTab />
-      case 'slacr':       return <SlacrWorksheet />
-      case 'status':      return <StatusTab onNavigate={setActiveTab} />
+      case 'onboarding':   return <OnboardingTab />
+      case 'loan':         return <LoanRequestTab />
+      case 'documents':    return <DocumentsTab />
+      case 'notes':        return <ResearchTab />
+      case 'status':       return <StatusTab onNavigate={setActiveTab} />
+      case 'underwriting': return <DeckTab />
+      case 'memo':         return <FinalTab />
+      case 'interpret':
+        return (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="max-w-sm text-center">
+              <p className="text-sm font-semibold text-[#161616] mb-2">Interpret</p>
+              <p className="text-xs text-[#6f6f6f] leading-relaxed">
+                Interpret tab coming in Phase 28 — Neural SLACR model with SHAP,
+                LIME, and EDA visualizations.
+              </p>
+            </div>
+          </div>
+        )
+      case 'proposal':
+        return (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="max-w-sm text-center">
+              <p className="text-sm font-semibold text-[#161616] mb-2">Proposal</p>
+              <p className="text-xs text-[#6f6f6f] leading-relaxed">
+                Borrower-facing Proposal tab coming in Phase 27.
+              </p>
+            </div>
+          </div>
+        )
+      case 'deckr':
+        return (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="max-w-sm text-center">
+              <p className="text-sm font-semibold text-[#161616] mb-2">Deckr</p>
+              <p className="text-xs text-[#6f6f6f] leading-relaxed">
+                Deckr output tab coming in Phase 27.
+              </p>
+            </div>
+          </div>
+        )
     }
   }
 

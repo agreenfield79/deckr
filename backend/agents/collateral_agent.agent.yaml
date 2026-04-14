@@ -3,6 +3,7 @@ kind: native
 name: collateral_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
 style: react
+hide_reasoning: true
 description: |
   Analyzes all uploaded collateral documents (appraisals, property schedules,
   UCC filings, lien records, title reports) and produces a structured collateral

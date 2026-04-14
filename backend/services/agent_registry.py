@@ -76,7 +76,7 @@ AGENTS: dict[str, dict] = {
         "display_name":    "Packaging Agent",
         "system_prompt":   "prompts/packaging_agent.txt",
         "context_folders": ["all"],
-        "output_path":     "Deck/deck.md",
+        "output_path":     "Deck/memo.md",
         "model":           "llama-70b",
         "mode":            "generate",
         "conversational":  True,

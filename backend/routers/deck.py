@@ -46,13 +46,13 @@ def generate_deck(body: GenerateRequest):
             session_id=body.session_id,
             messages=[],
             save_to_workspace=True,
-            save_path="Deck/deck.md",
+            save_path="Deck/memo.md",
             action_type="full_package",
         )
-        logger.info("deck/generate: full_package complete → Deck/deck.md")
+        logger.info("deck/generate: full_package complete → Deck/memo.md")
         return {
             "generated": True,
-            "path": "Deck/deck.md",
+            "path": "Deck/memo.md",
             "source": "full_package",
             "sections_loaded": sections_loaded,
         }
@@ -62,7 +62,7 @@ def generate_deck(body: GenerateRequest):
     deck_service.save_deck(content)
     return {
         "generated": True,
-        "path": "Deck/deck.md",
+        "path": "Deck/memo.md",
         "source": "agent_notes",
         "sections_loaded": sections_loaded,
     }
@@ -81,13 +81,13 @@ def get_deck():
 def save_deck(body: SaveRequest):
     """Persist raw deck content (used after inline section edits)."""
     deck_service.save_deck(body.content)
-    logger.info("deck/save: Deck/deck.md updated (%d bytes)", len(body.content))
-    return {"saved": True, "path": "Deck/deck.md"}
+    logger.info("deck/save: Deck/memo.md updated (%d bytes)", len(body.content))
+    return {"saved": True, "path": "Deck/memo.md"}
 
 
 @router.post("/section")
 def regenerate_section(body: SectionRequest):
-    """Regenerate a single deck section using the appropriate agent and update deck.md."""
+    """Regenerate a single deck section using the appropriate agent and update memo.md."""
     if body.section not in deck_service.SECTION_NAMES:
         raise HTTPException(status_code=400, detail=f"Unknown section: '{body.section}'")
 
@@ -110,5 +110,5 @@ def regenerate_section(body: SectionRequest):
     updated_deck = deck_service.update_section_in_deck(body.section, new_content)
     deck_service.save_deck(updated_deck)
 
-    logger.info("deck/section: '%s' regenerated and saved to Deck/deck.md", body.section)
+    logger.info("deck/section: '%s' regenerated and saved to Deck/memo.md", body.section)
     return {"section": body.section, "content": new_content, "saved": True}

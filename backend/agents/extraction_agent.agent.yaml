@@ -3,6 +3,7 @@ kind: native
 name: financial_data_extraction_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
 style: react
+hide_reasoning: true
 # NOTE: Context pre-injected by backend; no tool calls expected.
 # Backend (run_extraction) reads sidecar files, injects text as workspace context,
 # calls this agent via Orchestrate, parses the JSON response, and auto-saves

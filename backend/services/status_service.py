@@ -53,7 +53,7 @@ _CHECKLIST = [
         "path":     "Research/",
         "type":     "folder_has_files_alt",
         "alt_path": "Industry/",
-        "tab":      "research",
+        "tab":      "notes",
         "action":   "Add Research Notes",
     },
     {
@@ -67,15 +67,15 @@ _CHECKLIST = [
         "label":  "SLACR Scored",
         "path":   "SLACR/slacr.json",
         "type":   "file_exists",
-        "tab":    "slacr",
+        "tab":    "interpret",
         "action": "Score SLACR",
     },
     {
-        "label":  "Deck Generated",
-        "path":   "Deck/deck.md",
+        "label":  "Memo Generated",
+        "path":   "Deck/memo.md",
         "type":   "file_exists",
-        "tab":    "deck",
-        "action": "Generate Deck",
+        "tab":    "underwriting",
+        "action": "Generate Memo",
     },
 ]
 

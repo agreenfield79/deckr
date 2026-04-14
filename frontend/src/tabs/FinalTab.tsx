@@ -9,35 +9,15 @@ import MarkdownViewer from '../editor/MarkdownViewer'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
 import { useToast } from '../context/ToastContext'
 
-// Must match DeckTab.tsx SECTION_NAMES exactly
-const SECTION_NAMES = [
-  'Credit Request Summary',
-  'Business Overview',
-  'Financial Analysis',
-  'Leverage',
-  'Liquidity',
-  'Collateral',
-  'Guarantor',
-  'Industry',
-  'Risks',
-  'Mitigants',
-  'SLACR Score',
-  'Recommendation',
-  'Structure',
-] as const
-
-type SectionName = (typeof SECTION_NAMES)[number]
-
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
+  // Accept any ## N. Section Name heading — not filtered to a static list.
   const regex = /## \d+\. (.+?)\n\n([\s\S]*?)(?=\n\n---|\n## \d+\.|$)/g
   let match
   while ((match = regex.exec(markdown)) !== null) {
     const name = match[1].trim()
     const content = match[2].trim()
-    if (SECTION_NAMES.includes(name as SectionName)) {
-      sections[name] = content
-    }
+    sections[name] = content
   }
   return sections
 }
@@ -115,8 +95,9 @@ export default function FinalTab() {
     window.print()
   }
 
-  const completedCount = SECTION_NAMES.filter(
-    (n) => sections[n] && !sections[n].startsWith('> **PENDING**'),
+  const sectionEntries = Object.entries(sections)
+  const completedCount = sectionEntries.filter(
+    ([, content]) => content && !content.startsWith('> **PENDING**'),
   ).length
 
   if (loading) {
@@ -137,7 +118,7 @@ export default function FinalTab() {
             Final Document
           </span>
           <span className="text-[10px] text-[#6f6f6f] bg-[#e0e0e0] px-1.5 py-0.5 rounded font-mono">
-            {completedCount}/{SECTION_NAMES.length} sections
+            {completedCount}/{sectionEntries.length} sections
           </span>
         </div>
         <button
@@ -173,8 +154,7 @@ export default function FinalTab() {
           </div>
 
           {/* Sections */}
-          {SECTION_NAMES.map((name, idx) => {
-            const content = sections[name] ?? ''
+          {sectionEntries.map(([name, content], idx) => {
             const isPending = !content || content.startsWith('> **PENDING**')
 
             return (
@@ -194,13 +174,13 @@ export default function FinalTab() {
                 )}
 
                 {/* Inline charts after relevant sections */}
-                {name === 'Financial Analysis' && (
+                {name.includes('Financial Analysis') && (
                   <RevenueEbitdaChart data={financials} />
                 )}
-                {name === 'Leverage' && (
+                {(name === 'Leverage' || name.includes('Leverage & Capitalization')) && (
                   <LeverageChart data={financials} />
                 )}
-                {name === 'SLACR Score' && slacrData && (
+                {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
                   <SlacrRadarChart data={slacrData} />
                 )}
               </div>

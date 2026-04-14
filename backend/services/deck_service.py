@@ -193,16 +193,25 @@ def assemble_deck(sections: dict[str, str]) -> str:
         lines.append("")
 
     document = "\n".join(lines)
-    logger.info("deck assembled: %d/%d sections → Deck/deck.md", len(sections), len(SECTION_NAMES))
+    logger.info("memo assembled: %d/%d sections → Deck/memo.md", len(sections), len(SECTION_NAMES))
     return document
 
 
 def load_deck() -> str | None:
-    """Read Deck/deck.md if it exists."""
+    """Read Deck/memo.md if it exists; fall back to Deck/deck.md for in-progress deals."""
     root = workspace_service._get_root()
+    memo_path = root / "Deck" / "memo.md"
+    if memo_path.exists():
+        try:
+            return memo_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            pass
+    # Fallback: legacy path used before Phase 25 rename — prevents data loss for
+    # deals that completed the packaging pipeline before the rename was deployed.
     deck_path = root / "Deck" / "deck.md"
     if deck_path.exists():
         try:
+            logger.info("load_deck: Deck/memo.md not found; falling back to Deck/deck.md")
             return deck_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             pass
@@ -210,8 +219,8 @@ def load_deck() -> str | None:
 
 
 def save_deck(content: str) -> None:
-    """Write content to Deck/deck.md."""
-    workspace_service.write_file("Deck/deck.md", content)
+    """Write content to Deck/memo.md."""
+    workspace_service.write_file("Deck/memo.md", content)
 
 
 def update_section_in_deck(section_name: str, new_content: str) -> str:
@@ -236,7 +245,7 @@ def update_section_in_deck(section_name: str, new_content: str) -> str:
     updated, count = pattern.subn(replacement, existing)
 
     if count == 0:
-        logger.warning("deck: could not locate section '%s' in deck.md for in-place update", section_name)
+        logger.warning("deck: could not locate section '%s' in memo.md for in-place update", section_name)
         return existing
 
     return updated

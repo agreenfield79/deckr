@@ -23,35 +23,17 @@ import { getRatingColor } from '../types/slacr'
 import type { SlacrOutput } from '../types/slacr'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
 
-const SECTION_NAMES = [
-  'Credit Request Summary',
-  'Business Overview',
-  'Financial Analysis',
-  'Leverage',
-  'Liquidity',
-  'Collateral',
-  'Guarantor',
-  'Industry',
-  'Risks',
-  'Mitigants',
-  'SLACR Score',
-  'Recommendation',
-  'Structure',
-] as const
-
-type SectionName = (typeof SECTION_NAMES)[number]
-
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
-  // Match ## N. Section Name\n\n{content} up to the next ---\n or ## N. or end
+  // Accept any ## N. Section Name heading — not filtered to a static list.
+  // This ensures content from the Orchestrate packaging agent (which produces
+  // its own section schema) renders correctly without changing the agent prompt.
   const regex = /## \d+\. (.+?)\n\n([\s\S]*?)(?=\n\n---|\n## \d+\.|$)/g
   let match
   while ((match = regex.exec(markdown)) !== null) {
     const name = match[1].trim()
     const content = match[2].trim()
-    if (SECTION_NAMES.includes(name as SectionName)) {
-      sections[name] = content
-    }
+    sections[name] = content
   }
   return sections
 }
@@ -61,14 +43,9 @@ function reconstructDeck(
   sectionName: string,
   newContent: string,
 ): string {
-  const idx = (SECTION_NAMES as readonly string[]).indexOf(sectionName) + 1
-  if (idx === 0) return original
-  const headingEscaped = `## ${idx}. ${sectionName}`.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    '\\$&',
-  )
+  const headingEscaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const pattern = new RegExp(
-    `(${headingEscaped}\\n\\n)([\\s\\S]*?)(?=\\n\\n---|\\n## \\d+\\.|$)`,
+    `(## \\d+\\. ${headingEscaped}\\n\\n)([\\s\\S]*?)(?=\\n\\n---|\\n## \\d+\\.|$)`,
   )
   return original.replace(pattern, `$1${newContent.trim()}`)
 }
@@ -125,11 +102,11 @@ export default function DeckTab() {
       await refreshTree()
       const msg =
         res.source === 'full_package'
-          ? 'Full deck generated → Deck/deck.md'
-          : `Deck assembled from ${res.sections_loaded} existing sections → Deck/deck.md`
+          ? 'Full memo generated → Deck/memo.md'
+          : `Memo assembled from ${res.sections_loaded} existing sections → Deck/memo.md`
       toastSuccess(msg)
     } catch {
-      toastError('Deck generation failed')
+      toastError('Memo generation failed')
     } finally {
       setGenerating(false)
     }
@@ -172,7 +149,7 @@ export default function DeckTab() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'deck.md'
+    a.download = 'memo.md'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -202,11 +179,11 @@ export default function DeckTab() {
         <div className="max-w-sm text-center">
           <Zap size={36} className="mx-auto mb-3 text-[#0f62fe] opacity-60" />
           <h2 className="text-sm font-semibold text-[#161616] mb-1">
-            Your deck hasn't been generated yet
+            Credit Memorandum not yet generated
           </h2>
           <p className="text-xs text-[#6f6f6f] mb-5 leading-relaxed">
             Complete the onboarding form, upload supporting documents, and run
-            the agents. Then generate your full 13-section Credit Memorandum.
+            the agents. Then generate the full Credit Memorandum (memo.md).
           </p>
           <button
             onClick={handleGenerate}
@@ -218,7 +195,7 @@ export default function DeckTab() {
             ) : (
               <Zap size={13} />
             )}
-            {generating ? 'Generating…' : 'Generate Deck'}
+            {generating ? 'Generating…' : 'Generate Memo'}
           </button>
         </div>
       </div>
@@ -226,8 +203,9 @@ export default function DeckTab() {
   }
 
   // ── Deck view ──────────────────────────────────────────────────────────────
-  const completedCount = SECTION_NAMES.filter(
-    (n) => sections[n] && !sections[n].startsWith('> **PENDING**'),
+  const sectionEntries = Object.entries(sections)
+  const completedCount = sectionEntries.filter(
+    ([, content]) => content && !content.startsWith('> **PENDING**'),
   ).length
 
   return (
@@ -239,7 +217,7 @@ export default function DeckTab() {
             Credit Memorandum
           </span>
           <span className="text-[10px] text-[#6f6f6f] bg-[#e0e0e0] px-1.5 py-0.5 rounded font-mono">
-            {completedCount}/{SECTION_NAMES.length} sections
+            {completedCount}/{sectionEntries.length} sections
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -269,11 +247,10 @@ export default function DeckTab() {
 
       {/* Section cards */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {SECTION_NAMES.map((name, idx) => {
+        {sectionEntries.map(([name, content], idx) => {
           const isExpanded = expanded.has(name)
           const isEditing = editingSection === name
           const isRegenerating = regeneratingSection === name
-          const content = sections[name] ?? ''
           const isPending =
             !content || content.startsWith('> **PENDING**')
 
@@ -387,21 +364,21 @@ export default function DeckTab() {
                         <p className="text-xs text-[#8d6708] italic">
                           Not yet generated. Click &ldquo;Regenerate Section&rdquo; to produce this content, or run the relevant agent from the Agent Panel.
                         </p>
-                        {name === 'SLACR Score' && slacrData && (
+                        {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
                           <SlacrScorePanel data={slacrData} />
                         )}
                       </>
                     ) : (
                       <>
                         <MarkdownViewer content={content} />
-                        {name === 'Financial Analysis' && (
+                        {name.includes('Financial Analysis') && (
                           <RevenueEbitdaChart data={financials} />
                         )}
-                        {name === 'Leverage' && (
+                        {(name === 'Leverage' || name.includes('Leverage & Capitalization')) && (
                           <LeverageChart data={financials} />
                         )}
-                        {/* SLACR Score section: show radar + live data panel from slacr.json */}
-                        {name === 'SLACR Score' && slacrData && (
+                        {/* SLACR section: show radar + live data panel from slacr.json */}
+                        {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
                           <>
                             <SlacrRadarChart data={slacrData} />
                             <SlacrScorePanel data={slacrData} />

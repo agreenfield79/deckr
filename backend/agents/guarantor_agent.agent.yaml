@@ -3,6 +3,7 @@ kind: native
 name: guarantor_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
 style: react
+hide_reasoning: true
 description: |
   Analyzes all uploaded guarantor documents (personal financial statements,
   personal tax returns, net worth schedules) and performs a lightweight online

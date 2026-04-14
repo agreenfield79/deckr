@@ -856,7 +856,7 @@ _PIPELINE_PROMPTS: dict[str, str] = {
     ),
     "review": (
         "Run Review Agent — two-level credit memo reconciliation. "
-        "STEP 0: Call get_file_content('Deck/deck.md'). "
+        "STEP 0: Call get_file_content('Deck/memo.md'). "
         "STEP 1: Call get_file_content for each agent note in sequence: "
         "'Agent Notes/financial_analysis.md', 'Agent Notes/industry_analysis.md', "
         "'Agent Notes/collateral_analysis.md', 'Agent Notes/guarantor_analysis.md', "

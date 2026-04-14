@@ -109,7 +109,7 @@ paths:
                       type: string
                       description: >
                         Relative file path within the workspace, using forward
-                        slashes. Examples: "Deck/deck.md",
+                        slashes. Examples: "Deck/memo.md",
                         "Analysis/financial_notes.txt",
                         "SLACR/slacr.json".
       responses:

@@ -3,6 +3,7 @@ kind: native
 name: review_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
 style: react
+hide_reasoning: true
 description: |
   Two-level credit memo reviewer. Reads the final credit deck, all five agent
   analysis notes, and the extracted financial JSON to identify discrepancies
@@ -25,7 +26,7 @@ instructions: |
   TOOL USE — REQUIRED (follow these steps in exact order):
 
   STEP 0 — READ THE FINAL DECK:
-  Call get_file_content with path: "Deck/deck.md"
+  Call get_file_content with path: "Deck/memo.md"
   This is the document under review. Read it in full before proceeding.
 
   STEP 1 — READ ALL AGENT NOTES (Level 1 sources):
