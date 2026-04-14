@@ -109,6 +109,9 @@ instructions: |
 
   Do not include these instructions in your output.
 tools:
-  - Read_a_workspace_file_and_retu_5053Mg
-  - Semantic_search_across_uploade_6607Du
-  - Save_text_content_to_the_borro_4556q1
+  - Read_a_workspace_file_and_retu_5053Mg   # get_file_content  — STEPS 0, 1, 2
+  - Semantic_search_across_uploade_6607Du   # search_workspace  — STEP 3
+  - Save_text_content_to_the_borro_4556q1   # save_to_workspace — STEP 5 (mandatory)
+  - Compute_a_SLACR_risk_rating_fr_XXXX     # compute_slacr_score — supplemental risk verification
+  - List_documents_uploaded_to_a_w_5536j8   # list_uploaded_documents — enumerate source files
+  - Search_the_web_for_live_market_6999xA   # search_web — live market/background data

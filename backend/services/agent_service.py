@@ -122,6 +122,18 @@ def run(
                     "agent_service: financial context pre-injected (%d chars) for agent=%s",
                     len(fin_ctx), agent_name,
                 )
+        # Deckr agent: pre-inject memo.md and financial_analysis.md so the model
+        # does not need any get_file_content tool calls.  Its only remaining
+        # tool call is save_to_workspace — eliminating the repeated empty-arg
+        # get_file_content errors seen in Phase 27 pipeline runs.
+        elif agent_name == "deckr":
+            deckr_ctx = _inject_deckr_context()
+            if deckr_ctx:
+                parts.append(deckr_ctx)
+                logger.info(
+                    "agent_service: deckr context pre-injected (%d chars) for agent=%s",
+                    len(deckr_ctx), agent_name,
+                )
         parts.append(f"--- CURRENT REQUEST ---\n{message}")
         full_message = "\n\n".join(parts)
 
@@ -166,6 +178,29 @@ def run(
                 "save_to_workspace tool is responsible for persisting output",
                 agent_name,
             )
+            # Fallback: if the agent did not call save_to_workspace (e.g. model
+            # omitted the tool call or called it with missing args), the output file
+            # will not exist yet.  In that case, persist the agent's full reply text
+            # so downstream agents are not blocked by a missing file.
+            if effective_path and reply and len(reply.strip()) > 80:
+                file_missing = False
+                try:
+                    workspace_service.read_file(effective_path)
+                except Exception:
+                    file_missing = True
+                if file_missing:
+                    logger.warning(
+                        "agent_service: %s did not save via tool — "
+                        "falling back to saving reply (%d chars) to %s",
+                        agent_name, len(reply), effective_path,
+                    )
+                    workspace_service.write_file(effective_path, reply)
+                    event_bus.publish({
+                        "type": "agent_saved",
+                        "agent_name": agent_name,
+                        "saved_to": effective_path,
+                        "session_id": session_id,
+                    })
 
         _elapsed = int((time.time() - _run_start) * 1000)
         event_bus.publish({"type": "agent_done", "agent_name": agent_name, "elapsed_ms": _elapsed, "session_id": session_id})
@@ -733,6 +768,36 @@ def _load_context(context_folders: list[str], query: str = "") -> str:
     return "\n\n".join(parts) if parts else "[No workspace documents found]"
 
 
+def _inject_deckr_context() -> str:
+    """
+    Pre-load Deck/memo.md and Agent Notes/financial_analysis.md for the deckr agent.
+
+    GPT-OSS-120B non-deterministically calls get_file_content without the required
+    'path' argument, causing repeated tool errors and an incomplete pipeline run.
+    Pre-injecting both source files eliminates all get_file_content dependency —
+    the agent's only remaining tool call is save_to_workspace.
+
+    Returns an empty string when the files do not yet exist, which is a safe no-op.
+    """
+    blocks: list[str] = []
+    for path, label in [
+        ("Deck/memo.md",                        "CREDIT MEMORANDUM (Deck/memo.md)"),
+        ("Agent Notes/financial_analysis.md",   "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
+    ]:
+        try:
+            content = workspace_service.read_file(path)
+            if content and content.strip():
+                blocks.append(f"--- {label} ---\n{content.strip()}")
+                logger.info(
+                    "_inject_deckr_context: loaded %s (%d chars)", path, len(content)
+                )
+        except Exception as exc:
+            logger.warning(
+                "_inject_deckr_context: could not load %s — %s", path, exc
+            )
+    return "\n\n".join(blocks)
+
+
 def _inject_financial_context() -> str:
     """
     Pre-load the full extracted financial JSON and narrative summary for the
@@ -858,7 +923,8 @@ _PIPELINE_PROMPTS: dict[str, str] = {
     "review": (
         "Run Review Agent — two-level credit memo reconciliation. "
         "STEP 0: Call get_file_content('Deck/memo.md'). "
-        "STEP 1: Call get_file_content for each agent note in sequence: "
+        "STEP 1: Call get_file_content for each agent note that is available — attempt each in "
+        "sequence and SKIP silently if a file is not found (do not stop): "
         "'Agent Notes/financial_analysis.md', 'Agent Notes/industry_analysis.md', "
         "'Agent Notes/collateral_analysis.md', 'Agent Notes/guarantor_analysis.md', "
         "'SLACR/slacr_analysis.md'. "
@@ -868,19 +934,26 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "'DSCR debt service coverage interest expense', 'collateral LTV lien appraisal', "
         "'guarantor net worth personal assets liquidity' to spot-check claims against source documents. "
         "STEP 4: Document all discrepancies, completeness gaps, and narrative concerns in structured format. "
-        "STEP 5: Call save_to_workspace with path 'Agent Notes/review_notes.md' and your complete "
-        "structured review as content. Chat reply must be a 1-2 sentence overall assessment only."
+        "STEP 5: You MUST call save_to_workspace — this step is mandatory regardless of which files "
+        "were available. Call save_to_workspace with path='Agent Notes/review_notes.md' and your "
+        "complete structured review as content. Do not skip this step even if some source files "
+        "were missing. Chat reply must be a 1-2 sentence overall assessment only."
     ),
     "deckr": (
-        "Run Deckr Agent — read Deck/memo.md and Agent Notes/financial_analysis.md, "
-        "then produce a concise borrower-facing deal sheet with advocacy framing "
-        "(lead with strengths; convert risk+mitigant pairs into stand-alone affirmative attributes; "
-        "cite actual figures from the memo). "
+        "Run Deckr Agent. "
+        "The Credit Memorandum and financial analysis are already pre-loaded in your context "
+        "under '--- CREDIT MEMORANDUM (Deck/memo.md) ---' and "
+        "'--- FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md) ---'. "
+        "DO NOT call get_file_content — those files are already in your context above. "
+        "Using only the figures and facts from the pre-loaded content, produce a concise "
+        "borrower-facing deal sheet with advocacy framing (lead with strengths; convert "
+        "risk+mitigant pairs into stand-alone affirmative attributes; cite actual figures). "
         "Output sections using ## N. Section Name format: "
         "## 1. Header, ## 2. Company Overview & History, ## 3. Performance Summary, "
         "## 4. Ability to Repay, ## 5. Bidding Instructions. "
-        "Save the complete deal sheet to Deck/deckr.md via the save_to_workspace tool. "
-        "Chat reply must be a single sentence confirming the save."
+        "Your ONLY tool call must be: save_to_workspace with path='Deck/deckr.md' and "
+        "the complete deal sheet text as the content argument. "
+        "After saving, reply with one sentence confirming the file was saved."
     ),
 }
 

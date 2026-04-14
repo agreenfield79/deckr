@@ -11,10 +11,12 @@ import { useToast } from '../context/ToastContext'
 
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
-  // Accept any ## N. Section Name heading — not filtered to a static list.
-  const regex = /## \d+\. (.+?)\n\n([\s\S]*?)(?=\n\n---|\n## \d+\.|$)/g
+  // Normalize line endings; accept one or more newlines between heading and content.
+  // Agents output single \n between heading and body — \n\n is not guaranteed.
+  const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const regex = /## \d+\. (.+?)\n+([\s\S]*?)(?=\n---|\n## \d+\.|$)/g
   let match
-  while ((match = regex.exec(markdown)) !== null) {
+  while ((match = regex.exec(normalized)) !== null) {
     const name = match[1].trim()
     const content = match[2].trim()
     sections[name] = content

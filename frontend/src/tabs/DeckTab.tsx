@@ -26,12 +26,12 @@ import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/Fi
 
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
-  // Accept any ## N. Section Name heading — not filtered to a static list.
-  // This ensures content from the Orchestrate packaging agent (which produces
-  // its own section schema) renders correctly without changing the agent prompt.
-  const regex = /## \d+\. (.+?)\n\n([\s\S]*?)(?=\n\n---|\n## \d+\.|$)/g
+  // Normalize line endings; accept one or more newlines between heading and content.
+  // Agents output single \n between heading and body — \n\n is not guaranteed.
+  const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const regex = /## \d+\. (.+?)\n+([\s\S]*?)(?=\n---|\n## \d+\.|$)/g
   let match
-  while ((match = regex.exec(markdown)) !== null) {
+  while ((match = regex.exec(normalized)) !== null) {
     const name = match[1].trim()
     const content = match[2].trim()
     sections[name] = content
@@ -44,11 +44,12 @@ function reconstructDeck(
   sectionName: string,
   newContent: string,
 ): string {
+  const normalized = original.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const headingEscaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const pattern = new RegExp(
-    `(## \\d+\\. ${headingEscaped}\\n\\n)([\\s\\S]*?)(?=\\n\\n---|\\n## \\d+\\.|$)`,
+    `(## \\d+\\. ${headingEscaped}\\n+)([\\s\\S]*?)(?=\\n---|\\n## \\d+\\.|$)`,
   )
-  return original.replace(pattern, `$1${newContent.trim()}`)
+  return normalized.replace(pattern, `$1${newContent.trim()}\n`)
 }
 
 export default function DeckTab() {
