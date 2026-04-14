@@ -130,11 +130,18 @@ AGENTS: dict[str, dict] = {
     "review": {
         "display_name":    "Review Agent",
         "system_prompt":   "prompts/review_agent.txt",
-        "context_folders": ["Deck/", "Agent Notes/"],
+        # No pre-injected context — agent reads all files via explicit tool calls.
+        # Pre-injection caused GPT-OSS-120B to skip mandatory get_file_content
+        # calls and produce shallow reviews from incomplete embeddings chunks.
+        "context_folders": [],
         "output_path":     "Agent Notes/review_notes.md",
         "model":           "llama-70b",
         "mode":            "generate",
-        "conversational":  False,  # stub
+        "conversational":  False,
+        # Agent calls save_to_workspace explicitly in STEP 5.
+        # Without this flag the backend auto-saves the brief chat confirmation,
+        # overwriting the full review the tool just wrote.
+        "orchestrate_tool_save": True,
     },
 }
 

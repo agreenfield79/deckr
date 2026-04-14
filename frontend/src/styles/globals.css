@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* ── Print stylesheet for Credit Memorandum (Final tab) ─────────────────── */
+/* The print-portal approach in FinalTab.tsx injects its own @media print    */
+/* rules dynamically.  This block is a safety fallback only.                 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
 @theme {
   --color-ibm-blue: #0f62fe;
   --color-ibm-blue-dark: #0043ce;

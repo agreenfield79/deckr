@@ -39,7 +39,7 @@ def dispatch(tool_name: str, inputs: dict) -> str | dict:
 # Tool handlers
 # ---------------------------------------------------------------------------
 
-def save_to_workspace(path: str, content: str, **kwargs) -> dict:
+def save_to_workspace(path: str = None, content: str = None, **kwargs) -> dict:
     """
     Agent-initiated file save to workspace.
 
@@ -50,6 +50,12 @@ def save_to_workspace(path: str, content: str, **kwargs) -> dict:
     **kwargs absorbs extra metadata fields Orchestrate may inject (e.g. tool_name)
     so the handler does not raise on unexpected keyword arguments.
     """
+    if path is None or content is None:
+        missing = [f for f, v in [('path', path), ('content', content)] if v is None]
+        msg = f'ERROR: Required parameter(s) {missing} were not provided to save_to_workspace. ' \
+              f'Call again with both "path" (workspace-relative file path) and "content" (text to write).'
+        logger.warning("tool_service.save_to_workspace: missing required args %s", missing)
+        return {'error': msg, 'saved': False}
     if kwargs:
         logger.debug("tool_service.save_to_workspace: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service

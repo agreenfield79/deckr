@@ -13,12 +13,15 @@ import {
 } from 'lucide-react'
 import * as deckApi from '../api/deck'
 import * as slacrApi from '../api/slacr'
+import { getExtractedFinancials } from '../api/financials'
+import type { ExtractedFinancials } from '../api/financials'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import { useToast } from '../context/ToastContext'
 import { useProject } from '../context/ProjectContext'
 import { useSession } from '../hooks/useSession'
 import { getRatingColor } from '../types/slacr'
 import type { SlacrOutput } from '../types/slacr'
+import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
 
 const SECTION_NAMES = [
   'Credit Request Summary',
@@ -86,6 +89,7 @@ export default function DeckTab() {
   const [editDraft, setEditDraft] = useState('')
   const [regeneratingSection, setRegeneratingSection] = useState<string | null>(null)
   const [slacrData, setSlacrData] = useState<SlacrOutput | null>(null)
+  const [financials, setFinancials] = useState<ExtractedFinancials | null>(null)
 
   const fetchDeck = useCallback(async () => {
     setLoading(true)
@@ -93,6 +97,7 @@ export default function DeckTab() {
       const [deckRes] = await Promise.all([
         deckApi.getDeck(),
         slacrApi.getScore().then(setSlacrData).catch(() => {}),
+        getExtractedFinancials().then(setFinancials).catch(() => {}),
       ])
       if (deckRes.exists && deckRes.content) {
         setDeckContent(deckRes.content)
@@ -389,9 +394,18 @@ export default function DeckTab() {
                     ) : (
                       <>
                         <MarkdownViewer content={content} />
-                        {/* SLACR Score section: show live data panel from slacr.json */}
+                        {name === 'Financial Analysis' && (
+                          <RevenueEbitdaChart data={financials} />
+                        )}
+                        {name === 'Leverage' && (
+                          <LeverageChart data={financials} />
+                        )}
+                        {/* SLACR Score section: show radar + live data panel from slacr.json */}
                         {name === 'SLACR Score' && slacrData && (
-                          <SlacrScorePanel data={slacrData} />
+                          <>
+                            <SlacrRadarChart data={slacrData} />
+                            <SlacrScorePanel data={slacrData} />
+                          </>
                         )}
                       </>
                     )}

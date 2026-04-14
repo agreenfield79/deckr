@@ -110,6 +110,17 @@ def run(
             parts.append(f"--- WORKSPACE CONTEXT ---\n{context}")
         if history_block:
             parts.append(history_block.strip())
+        # Financial agent: pre-inject the complete extracted JSON and summary so
+        # GPT-OSS-120B always has the full structured data, even when it
+        # non-deterministically skips the get_file_content tool call.
+        if agent_name == "financial":
+            fin_ctx = _inject_financial_context()
+            if fin_ctx:
+                parts.append(fin_ctx)
+                logger.info(
+                    "agent_service: financial context pre-injected (%d chars) for agent=%s",
+                    len(fin_ctx), agent_name,
+                )
         parts.append(f"--- CURRENT REQUEST ---\n{message}")
         full_message = "\n\n".join(parts)
 
@@ -721,6 +732,40 @@ def _load_context(context_folders: list[str], query: str = "") -> str:
     return "\n\n".join(parts) if parts else "[No workspace documents found]"
 
 
+def _inject_financial_context() -> str:
+    """
+    Pre-load the full extracted financial JSON and narrative summary for the
+    financial agent.
+
+    GPT-OSS-120B non-deterministically skips the mandatory get_file_content
+    call when embeddings chunks of extracted_data.json are already present in
+    the injected context.  Providing the complete file verbatim here guarantees
+    the agent always has the full structured data, regardless of which tool
+    calls it chooses to make.
+
+    Returns an empty string when the files do not yet exist (e.g. extraction
+    has not run), which is a safe no-op — the agent falls back to tool calls.
+    """
+    blocks: list[str] = []
+    for path, label in [
+        ("Financials/extracted_data.json", "EXTRACTED FINANCIAL DATA (JSON)"),
+        ("Financials/financial_data_summary.md", "FINANCIAL DATA SUMMARY"),
+    ]:
+        try:
+            content = workspace_service.read_file(path)
+            if content and content.strip():
+                blocks.append(f"--- {label} ---\n{content.strip()}")
+                logger.info(
+                    "_inject_financial_context: loaded %s (%d chars)", path, len(content)
+                )
+        except Exception as exc:
+            logger.debug(
+                "_inject_financial_context: could not load %s — %s", path, exc
+            )
+
+    return "\n\n".join(blocks)
+
+
 def _build_prompt(agent: dict, context: str, message: str) -> str:
     prompt_path = Path(agent["system_prompt"])
     if prompt_path.exists():
@@ -810,8 +855,20 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "SLACR risk narrative, and all uploaded borrower documents in the workspace."
     ),
     "review": (
-        "Run Review Agent — review the complete credit package in the Deck folder for accuracy, "
-        "completeness, and compliance; flag any gaps or inconsistencies."
+        "Run Review Agent — two-level credit memo reconciliation. "
+        "STEP 0: Call get_file_content('Deck/deck.md'). "
+        "STEP 1: Call get_file_content for each agent note in sequence: "
+        "'Agent Notes/financial_analysis.md', 'Agent Notes/industry_analysis.md', "
+        "'Agent Notes/collateral_analysis.md', 'Agent Notes/guarantor_analysis.md', "
+        "'SLACR/slacr_analysis.md'. "
+        "STEP 2: Call get_file_content('Financials/extracted_data.json') — verify every "
+        "financial figure in financial_analysis.md traces back to a non-null value in this JSON. "
+        "STEP 3: Call search_workspace with queries 'revenue EBITDA net income operating income', "
+        "'DSCR debt service coverage interest expense', 'collateral LTV lien appraisal', "
+        "'guarantor net worth personal assets liquidity' to spot-check claims against source documents. "
+        "STEP 4: Document all discrepancies, completeness gaps, and narrative concerns in structured format. "
+        "STEP 5: Call save_to_workspace with path 'Agent Notes/review_notes.md' and your complete "
+        "structured review as content. Chat reply must be a 1-2 sentence overall assessment only."
     ),
 }
 
@@ -914,15 +971,16 @@ def run_pipeline_stream(session_id: str, message: str = ""):
             #     Review retrieves everything it needs via explicit tool calls.
             agent_name = stage[0]
             if agent_name == "review":
-                # Review shares packaging's Orchestrate thread.
-                # By the time review runs, the packaging thread already holds the
-                # full deck as packaging's prior assistant response — GPT-OSS 120B
-                # starts with the deck in thread memory and only needs to call
-                # get_file_content for the smaller cross-reference files
-                # (financial_analysis.md, slacr_analysis.md).  This avoids the
-                # "I am sorry" fallback that occurs when review is given a
-                # completely isolated thread with 19K+ chars of new tool content.
-                agent_thread_id = f"{pipeline_thread_id}-packaging"
+                # Review runs on its own isolated thread (Bug 3e fix).
+                # Sharing packaging's thread was unreliable — packaging's thread
+                # weight varies with deal complexity (2–5 tool calls + 13K deck).
+                # When packaging's thread is heavy, review's additional tool
+                # results push the combined context past GPT-OSS-120B's effective
+                # reasoning threshold, triggering the "I am sorry" fallback.
+                # The correct fix: isolated thread + explicit step-by-step prompt
+                # listing every file to read.  All files are already saved to the
+                # workspace by the time review runs, so tool calls are sufficient.
+                agent_thread_id = f"{pipeline_thread_id}-review"
             elif agent_name in ("packaging", "risk"):
                 # packaging: assembles the deck from workspace files; does not
                 #   need thread history from the analysis chain.

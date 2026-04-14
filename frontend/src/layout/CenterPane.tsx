@@ -8,6 +8,7 @@ import LoanRequestTab from '../tabs/LoanRequestTab'
 import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
+import FinalTab from '../tabs/FinalTab'
 import StatusTab from '../tabs/StatusTab'
 import SlacrWorksheet from '../tabs/SlacrWorksheet'
 
@@ -53,6 +54,7 @@ export default function CenterPane() {
       case 'documents':   return <DocumentsTab />
       case 'research':    return <ResearchTab />
       case 'deck':        return <DeckTab />
+      case 'final':       return <FinalTab />
       case 'slacr':       return <SlacrWorksheet />
       case 'status':      return <StatusTab onNavigate={setActiveTab} />
     }

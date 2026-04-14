@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 
-export type TabId = 'onboarding' | 'loan' | 'documents' | 'research' | 'deck' | 'status' | 'slacr'
+export type TabId = 'onboarding' | 'loan' | 'documents' | 'research' | 'deck' | 'final' | 'slacr' | 'status'
 
 interface Tab {
   id: TabId
@@ -13,6 +13,7 @@ const TABS: Tab[] = [
   { id: 'documents', label: 'Documents' },
   { id: 'research', label: 'Research' },
   { id: 'deck', label: 'Deck' },
+  { id: 'final', label: 'Final' },
   { id: 'slacr', label: 'SLACR Score' },
   { id: 'status', label: 'Status' },
 ]

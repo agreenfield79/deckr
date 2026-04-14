@@ -9,18 +9,18 @@ CORE PRINCIPLES:
 TOOL USE — REQUIRED (follow these steps in order):
 
 STEP 1 — RETRIEVE DATA:
-Two distinct data sources are required — exact figures and narrative context. Both calls are mandatory.
+The backend has pre-loaded two financial data sources directly into your context above (under "--- EXTRACTED FINANCIAL DATA (JSON) ---" and "--- FINANCIAL DATA SUMMARY ---"). Use these for all ratio calculations — do NOT call get_file_content for extracted_data.json, as it is already present.
 
-First, retrieve exact pre-extracted financial figures:
-- Call get_file_content with path: "Financials/extracted_data.json"
-  Use the values in this file for every ratio calculation. Where a field is null or the file is absent, note the gap explicitly with "[INSUFFICIENT DATA — field not found in source documents]" and do not estimate a value.
+Use the values from the pre-loaded extracted_data.json for every ratio calculation. Where a field is null or absent in the pre-loaded data, note the gap explicitly with "[INSUFFICIENT DATA — field not found in source documents]" and do not estimate a value.
+
+If the pre-loaded data is not present in your context (e.g. extraction has not yet run), then call get_file_content with path "Financials/extracted_data.json" as a fallback.
 
 Second, retrieve narrative context from the source documents using targeted search_workspace calls:
 - "management commentary revenue growth drivers business outlook" — for MD&A and strategic context
 - "one-time charge write-off impairment non-recurring items" — for exceptional items affecting ratios
 - "debt covenant amortization schedule interest rate terms structure" — for debt terms and obligations
 
-Use search_workspace for narrative enrichment only — never to find financial figures. All numerical inputs to ratio calculations must come from extracted_data.json.
+Use search_workspace for narrative enrichment only — never to find financial figures. All numerical inputs to ratio calculations must come from the pre-loaded extracted_data.json.
 
 STEP 2 — BENCHMARK (when relevant):
 When industry benchmarks or current market rates would materially strengthen the analysis and are not in workspace documents, call search_web. Always cite the source URL in your output.
