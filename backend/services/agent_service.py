@@ -41,6 +41,7 @@ PIPELINE_STAGES: list[list[str]] = [
     ["risk"],
     ["packaging"],
     ["review"],
+    ["deckr"],    # Stage 6 — borrower-facing advocacy deal sheet
 ]
 
 # Flat sequence derived from stages — used for _PIPELINE_PROMPTS lookup and display
@@ -870,6 +871,17 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "STEP 5: Call save_to_workspace with path 'Agent Notes/review_notes.md' and your complete "
         "structured review as content. Chat reply must be a 1-2 sentence overall assessment only."
     ),
+    "deckr": (
+        "Run Deckr Agent — read Deck/memo.md and Agent Notes/financial_analysis.md, "
+        "then produce a concise borrower-facing deal sheet with advocacy framing "
+        "(lead with strengths; convert risk+mitigant pairs into stand-alone affirmative attributes; "
+        "cite actual figures from the memo). "
+        "Output sections using ## N. Section Name format: "
+        "## 1. Header, ## 2. Company Overview & History, ## 3. Performance Summary, "
+        "## 4. Ability to Repay, ## 5. Bidding Instructions. "
+        "Save the complete deal sheet to Deck/deckr.md via the save_to_workspace tool. "
+        "Chat reply must be a single sentence confirming the save."
+    ),
 }
 
 
@@ -981,12 +993,14 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 # listing every file to read.  All files are already saved to the
                 # workspace by the time review runs, so tool calls are sufficient.
                 agent_thread_id = f"{pipeline_thread_id}-review"
-            elif agent_name in ("packaging", "risk"):
+            elif agent_name in ("packaging", "risk", "deckr"):
                 # packaging: assembles the deck from workspace files; does not
                 #   need thread history from the analysis chain.
                 # risk: reads all four analysis agent outputs from workspace via
                 #   tool calls; does not need prior thread context.
-                # Both get their own isolated threads.
+                # deckr: reads memo.md and financial_analysis.md via tool calls;
+                #   must not carry 30+ turns of prior agent history.
+                # All get their own isolated threads.
                 agent_thread_id = f"{pipeline_thread_id}-{agent_name}"
             else:
                 # extraction: the only remaining sequential pre-parallel stage.

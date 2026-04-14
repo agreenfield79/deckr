@@ -27,8 +27,8 @@ const TABS: Tab[] = [
   { id: 'interpret',    label: 'Interpret',    disabled: true },
   { id: 'underwriting', label: 'Underwriting' },
   { id: 'memo',         label: 'Memo' },
-  { id: 'proposal',     label: 'Proposal',     disabled: true },
-  { id: 'deckr',        label: 'Deckr',        disabled: true },
+  { id: 'proposal',     label: 'Proposal' },
+  { id: 'deckr',        label: 'Deckr' },
 ]
 
 interface TabBarProps {

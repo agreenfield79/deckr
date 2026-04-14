@@ -143,6 +143,21 @@ AGENTS: dict[str, dict] = {
         # overwriting the full review the tool just wrote.
         "orchestrate_tool_save": True,
     },
+    "deckr": {
+        "display_name":    "Deckr Agent",
+        "system_prompt":   "prompts/deckr_agent.txt",
+        # No pre-injected context — agent reads Deck/memo.md and
+        # Agent Notes/financial_analysis.md via explicit get_file_content tool calls.
+        "context_folders": [],
+        "output_path":     "Deck/deckr.md",
+        "model":           "llama-70b",
+        "mode":            "generate",
+        "conversational":  False,
+        # Agent calls save_to_workspace explicitly in STEP 3.
+        # Without this flag the backend auto-saves the brief confirmation reply,
+        # overwriting the full deal sheet the tool already wrote.
+        "orchestrate_tool_save": True,
+    },
 }
 
 

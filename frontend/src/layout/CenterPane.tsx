@@ -9,6 +9,8 @@ import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
 import FinalTab from '../tabs/FinalTab'
+import ProposalTab from '../tabs/ProposalTab'
+import DeckrTab from '../tabs/DeckrTab'
 import StatusTab from '../tabs/StatusTab'
 
 export default function CenterPane() {
@@ -67,28 +69,8 @@ export default function CenterPane() {
             </div>
           </div>
         )
-      case 'proposal':
-        return (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="max-w-sm text-center">
-              <p className="text-sm font-semibold text-[#161616] mb-2">Proposal</p>
-              <p className="text-xs text-[#6f6f6f] leading-relaxed">
-                Borrower-facing Proposal tab coming in Phase 27.
-              </p>
-            </div>
-          </div>
-        )
-      case 'deckr':
-        return (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="max-w-sm text-center">
-              <p className="text-sm font-semibold text-[#161616] mb-2">Deckr</p>
-              <p className="text-xs text-[#6f6f6f] leading-relaxed">
-                Deckr output tab coming in Phase 27.
-              </p>
-            </div>
-          </div>
-        )
+      case 'proposal':    return <ProposalTab />
+      case 'deckr':      return <DeckrTab />
     }
   }
 

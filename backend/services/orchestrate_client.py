@@ -25,6 +25,7 @@ _AGENT_ID_MAP: dict[str, str | None] = {
     "financial":  os.getenv("ORCHESTRATE_AGENT_ID_FINANCIAL"),
     "risk":       os.getenv("ORCHESTRATE_AGENT_ID_RISK"),
     "review":     os.getenv("ORCHESTRATE_AGENT_ID_REVIEW"),
+    "deckr":      os.getenv("ORCHESTRATE_AGENT_ID_DECKR"),
 }
 
 

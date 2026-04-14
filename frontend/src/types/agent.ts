@@ -8,6 +8,7 @@ export type AgentName =
   | 'risk'
   | 'coordination'
   | 'review'
+  | 'deckr'
 
 export interface AgentInfo {
   name: AgentName

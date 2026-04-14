@@ -77,6 +77,13 @@ _CHECKLIST = [
         "tab":    "underwriting",
         "action": "Generate Memo",
     },
+    {
+        "label":  "Deckr Generated",
+        "path":   "Deck/deckr.md",
+        "type":   "file_exists",
+        "tab":    "deckr",
+        "action": "Generate Deal Sheet",
+    },
 ]
 
 

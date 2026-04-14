@@ -18,9 +18,9 @@ const EXTRACTION_CARD: AgentCard = {
   key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
 }
 
-// Analytical pipeline cards — rendered in a 4-column grid (Phase 22: 7 cards).
+// Analytical pipeline cards — rendered in a 4-column grid (Phase 27: 8 cards).
 // Row 1 (parallel analysis stage): Financial | Industry | Collateral | Guarantor
-// Row 2 (sequential post-analysis): Risk | Packaging | Review | (empty)
+// Row 2 (sequential post-analysis): Risk | Packaging | Review | Deckr
 // This grouping makes the parallel/sequential pipeline stages visually apparent.
 const AGENT_CARDS: AgentCard[] = [
   { key: 'financial',  label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
@@ -30,6 +30,7 @@ const AGENT_CARDS: AgentCard[] = [
   { key: 'risk',       label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
   { key: 'packaging',  label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
   { key: 'review',     label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
+  { key: 'deckr',      label: 'Deckr',      abbr: 'Dk',  activeColor: 'ring-[#ff832b] bg-[#fff2e8]' },
 ]
 
 const LS_KEY = 'deckr:agentOfficeCollapsed'
