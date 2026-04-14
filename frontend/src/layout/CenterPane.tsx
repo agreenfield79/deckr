@@ -9,6 +9,7 @@ import DocumentsTab from '../tabs/DocumentsTab'
 import ResearchTab from '../tabs/ResearchTab'
 import DeckTab from '../tabs/DeckTab'
 import FinalTab from '../tabs/FinalTab'
+import InterpretTab from '../tabs/InterpretTab'
 import ProposalTab from '../tabs/ProposalTab'
 import DeckrTab from '../tabs/DeckrTab'
 import StatusTab from '../tabs/StatusTab'
@@ -57,18 +58,7 @@ export default function CenterPane() {
       case 'status':       return <StatusTab onNavigate={setActiveTab} />
       case 'underwriting': return <DeckTab />
       case 'memo':         return <FinalTab />
-      case 'interpret':
-        return (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="max-w-sm text-center">
-              <p className="text-sm font-semibold text-[#161616] mb-2">Interpret</p>
-              <p className="text-xs text-[#6f6f6f] leading-relaxed">
-                Interpret tab coming in Phase 28 — Neural SLACR model with SHAP,
-                LIME, and EDA visualizations.
-              </p>
-            </div>
-          </div>
-        )
+      case 'interpret':    return <InterpretTab />
       case 'proposal':    return <ProposalTab />
       case 'deckr':      return <DeckrTab />
     }

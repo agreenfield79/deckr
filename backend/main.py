@@ -22,7 +22,7 @@ if not os.getenv("IBMCLOUD_API_KEY"):
     logger.error("IBMCLOUD_API_KEY is not set. Add it to backend/.env before starting.")
     sys.exit(1)
 
-from routers import agent, workspace, forms, upload, deck, deckr, status, risk, tools
+from routers import agent, workspace, forms, upload, deck, deckr, status, risk, tools, interpret
 
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
@@ -114,6 +114,7 @@ app.include_router(deckr.router,     prefix="/api/deckr",     tags=["deckr"])
 app.include_router(status.router,    prefix="/api/status",    tags=["status"])
 app.include_router(risk.router,      prefix="/api/risk",      tags=["risk"])
 app.include_router(tools.router,     prefix="/api/tools",     tags=["tools"])
+app.include_router(interpret.router, prefix="/api/interpret", tags=["interpret"])
 
 
 @app.get("/api/health", tags=["health"])

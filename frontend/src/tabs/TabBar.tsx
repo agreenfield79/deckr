@@ -24,7 +24,7 @@ const TABS: Tab[] = [
   { id: 'documents',    label: 'Documents' },
   { id: 'notes',        label: 'Notes' },
   { id: 'status',       label: 'Status' },
-  { id: 'interpret',    label: 'Interpret',    disabled: true },
+  { id: 'interpret',    label: 'Interpret' },
   { id: 'underwriting', label: 'Underwriting' },
   { id: 'memo',         label: 'Memo' },
   { id: 'proposal',     label: 'Proposal' },

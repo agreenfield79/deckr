@@ -13,3 +13,10 @@ pymupdf              # Step 14.1 — PDF text extraction pass 3 (MuPDF engine; h
 # agents into Orchestrate — it is NOT a runtime dependency and does NOT belong here.
 # Optional: pip install sentence-transformers — enables cross-encoder re-ranking in
 # embeddings_service.rerank(). Not listed here due to heavy torch dependency.
+
+# Phase 28 — Neural SLACR model (backend/ml/neural_slacr.py)
+# Install in the backend venv: pip install scikit-learn numpy shap lime
+scikit-learn     # RandomForestClassifier, MLPClassifier
+numpy            # array math, correlation matrix
+shap             # TreeExplainer for SHAP waterfall values
+lime             # LimeTabularExplainer for local linear approximation

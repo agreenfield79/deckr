@@ -1,6 +1,7 @@
-import { GroupedBarChart, LineChart, RadarChart } from '@carbon/charts-react'
+import { GroupedBarChart, HeatmapChart, LineChart, RadarChart, SimpleBarChart } from '@carbon/charts-react'
 import { ScaleTypes } from '@carbon/charts'
 import type { ExtractedFinancials } from '../api/financials'
+import type { NeuralSlacrOutput } from '../api/interpret'
 import type { SlacrOutput } from '../types/slacr'
 import { SLACR_DIMENSIONS } from '../types/slacr'
 
@@ -138,6 +139,172 @@ export function LeverageChart({ data }: FinancialChartsProps) {
   return (
     <div className="mt-3 border border-[#e0e0e0] rounded overflow-hidden">
       <LineChart data={chartData} options={options} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Interpret charts — driven by NeuralSlacrOutput from /api/interpret/run
+// ---------------------------------------------------------------------------
+
+interface InterpretChartsProps {
+  data: NeuralSlacrOutput | null
+}
+
+/**
+ * SHAP Waterfall Chart — horizontal SimpleBarChart of per-feature SHAP contributions.
+ * Positive values (orange) increase predicted risk; negative values (blue) reduce it.
+ */
+export function ShapWaterfallChart({ data }: InterpretChartsProps) {
+  if (!data) return EMPTY_MSG('Run the interpreter to generate SHAP values.')
+
+  const entries = Object.entries(data.shap_values)
+  if (entries.every(([, v]) => v === 0)) {
+    return EMPTY_MSG('SHAP values unavailable — install the shap package in the backend venv.')
+  }
+
+  const chartData = entries
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .map(([feature, value]) => ({
+      group: value >= 0 ? 'Increases Risk' : 'Reduces Risk',
+      key: feature,
+      value,
+    }))
+
+  const options = {
+    title: 'SHAP Feature Contributions',
+    axes: {
+      left: {
+        mapsTo: 'key',
+        scaleType: ScaleTypes.LABELS,
+        title: 'Feature',
+      },
+      bottom: {
+        mapsTo: 'value',
+        title: 'SHAP Value (contribution to predicted class)',
+      },
+    },
+    color: {
+      scale: { 'Increases Risk': '#da1e28', 'Reduces Risk': '#0f62fe' },
+    },
+    height: '320px',
+    toolbar: { enabled: false },
+  }
+
+  return (
+    <div className="mt-3 border border-[#e0e0e0] rounded overflow-hidden">
+      <div className="px-3 pt-2 pb-1 bg-[#f4f4f4] border-b border-[#e0e0e0]">
+        <p className="text-[10px] text-[#6f6f6f]">
+          Positive (red) = increases predicted risk class · Negative (blue) = reduces it
+        </p>
+      </div>
+      <SimpleBarChart data={chartData} options={options} />
+    </div>
+  )
+}
+
+/**
+ * Score Distribution Chart — SimpleBarChart of predicted rating distribution
+ * across the training set, with this deal's predicted band highlighted.
+ */
+export function ScoreDistributionChart({ data }: InterpretChartsProps) {
+  if (!data) return EMPTY_MSG('Run the interpreter to generate score distribution.')
+
+  const dealRating = data.predicted_rating
+
+  const chartData = data.score_distribution.map(({ rating, count }) => ({
+    group: rating === dealRating ? 'This Deal' : 'Training Records',
+    key: rating,
+    value: count,
+  }))
+
+  const options = {
+    title: 'Risk Band Distribution (Training Set)',
+    axes: {
+      left: {
+        mapsTo: 'value',
+        title: 'Deal Count',
+      },
+      bottom: {
+        mapsTo: 'key',
+        scaleType: ScaleTypes.LABELS,
+        title: 'Rating Band',
+      },
+    },
+    color: {
+      scale: { 'Training Records': '#6929c4', 'This Deal': '#ff832b' },
+    },
+    height: '260px',
+    toolbar: { enabled: false },
+  }
+
+  return (
+    <div className="mt-3 border border-[#e0e0e0] rounded overflow-hidden">
+      <div className="px-3 pt-2 pb-1 bg-[#f4f4f4] border-b border-[#e0e0e0]">
+        <p className="text-[10px] text-[#6f6f6f]">
+          Orange = this deal's predicted band · Purple = training set distribution
+        </p>
+      </div>
+      <SimpleBarChart data={chartData} options={options} />
+    </div>
+  )
+}
+
+/**
+ * Correlation Heatmap — HeatmapChart of the 9×9 Pearson correlation matrix
+ * across all input features.  Uses abbreviated feature labels to fit the grid.
+ */
+export function CorrelationHeatmapChart({ data }: InterpretChartsProps) {
+  if (!data) return EMPTY_MSG('Run the interpreter to generate the correlation matrix.')
+
+  const names = data.feature_names
+  // Abbreviated labels for axis readability
+  const abbrev = (n: string) =>
+    n.replace('Ability to Repay', 'A2R').replace('Risk Factors', 'Risk')
+
+  const chartData = data.correlation_matrix.flatMap((row, i) =>
+    row.map((value, j) => ({
+      group: abbrev(names[i]),
+      key: abbrev(names[j]),
+      value,
+    })),
+  )
+
+  const options = {
+    title: 'Feature Correlation Matrix',
+    axes: {
+      bottom: {
+        mapsTo: 'key',
+        scaleType: ScaleTypes.LABELS,
+        title: 'Feature',
+      },
+      left: {
+        mapsTo: 'group',
+        scaleType: ScaleTypes.LABELS,
+        title: 'Feature',
+      },
+    },
+    heatmap: {
+      colorLegend: { title: 'Pearson r' },
+    },
+    color: {
+      gradient: {
+        enabled: true,
+        colors: ['#0f62fe', '#ffffff', '#da1e28'],
+      },
+    },
+    height: '340px',
+    toolbar: { enabled: false },
+  }
+
+  return (
+    <div className="mt-3 border border-[#e0e0e0] rounded overflow-hidden">
+      <div className="px-3 pt-2 pb-1 bg-[#f4f4f4] border-b border-[#e0e0e0]">
+        <p className="text-[10px] text-[#6f6f6f]">
+          Red = positive correlation · Blue = negative correlation · White = no correlation
+        </p>
+      </div>
+      <HeatmapChart data={chartData} options={options} />
     </div>
   )
 }

@@ -1,0 +1,23 @@
+spec_version: v1
+kind: native
+
+name: interpreter_agent
+description: >
+  Interprets Neural SLACR machine-learning model output for the Deckr underwriting platform.
+  Translates SHAP values, LIME coefficients, feature importances, and score distribution
+  into a plain-language narrative for credit analysts.  Context (neural_slacr_output.json)
+  is pre-injected by the backend — the agent's only tool call is save_to_workspace.
+  Triggered on-demand from the Interpret tab; not part of the standard pipeline.
+
+llm: bedrock/openai.gpt-oss-120b-1:0
+style: react
+hide_reasoning: true
+
+instructions: backend/prompts/interpreter_agent.txt
+
+tools:
+  # VERIFY tool IDs in Orchestrate UI before deploying — these IDs are from the
+  # shared Orchestrate workspace and must match exactly.
+  - Read_a_workspace_file_and_retu_5053Mg   # get_file_content  — fallback reads if needed
+  - Save_text_content_to_the_borro_4556q1   # save_to_workspace — MANDATORY final action
+  - Semantic_search_across_uploade_6607Du   # search_workspace  — pull context from memo / review_notes

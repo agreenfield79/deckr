@@ -134,6 +134,17 @@ def run(
                     "agent_service: deckr context pre-injected (%d chars) for agent=%s",
                     len(deckr_ctx), agent_name,
                 )
+        # Interpreter agent: pre-inject neural_slacr_output.json so the model
+        # does not need get_file_content tool calls.  Its only remaining tool
+        # call is save_to_workspace("Agent Notes/neural_slacr.md").
+        elif agent_name == "interpreter":
+            interp_ctx = _inject_interpreter_context()
+            if interp_ctx:
+                parts.append(interp_ctx)
+                logger.info(
+                    "agent_service: interpreter context pre-injected (%d chars) for agent=%s",
+                    len(interp_ctx), agent_name,
+                )
         parts.append(f"--- CURRENT REQUEST ---\n{message}")
         full_message = "\n\n".join(parts)
 
@@ -798,6 +809,33 @@ def _inject_deckr_context() -> str:
     return "\n\n".join(blocks)
 
 
+def _inject_interpreter_context() -> str:
+    """
+    Pre-load SLACR/neural_slacr_output.json for the interpreter agent.
+
+    The Neural SLACR router writes this file before invoking the agent, so it
+    always contains fresh model output.  Pre-injecting it eliminates the
+    get_file_content empty-argument failure pattern documented in Phases 27/28.
+    The agent's only remaining tool call is save_to_workspace.
+    """
+    try:
+        content = workspace_service.read_file("SLACR/neural_slacr_output.json")
+        if content and content.strip():
+            logger.info(
+                "_inject_interpreter_context: loaded SLACR/neural_slacr_output.json (%d chars)",
+                len(content),
+            )
+            return (
+                "--- NEURAL SLACR OUTPUT (SLACR/neural_slacr_output.json) ---\n"
+                + content.strip()
+            )
+    except Exception as exc:
+        logger.warning(
+            "_inject_interpreter_context: could not load neural_slacr_output.json — %s", exc
+        )
+    return ""
+
+
 def _inject_financial_context() -> str:
     """
     Pre-load the full extracted financial JSON and narrative summary for the
@@ -953,6 +991,24 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "## 4. Ability to Repay, ## 5. Bidding Instructions. "
         "Your ONLY tool call must be: save_to_workspace with path='Deck/deckr.md' and "
         "the complete deal sheet text as the content argument. "
+        "After saving, reply with one sentence confirming the file was saved."
+    ),
+    # Interpreter is on-demand only (not a pipeline stage); this entry is provided
+    # for completeness and is used when the router passes no explicit message override.
+    "interpreter": (
+        "Run Interpreter Agent. "
+        "The Neural SLACR model output JSON is already pre-loaded in your context "
+        "under '--- NEURAL SLACR OUTPUT (SLACR/neural_slacr_output.json) ---'. "
+        "DO NOT call get_file_content — the model output is already in your context above. "
+        "Write a plain-language narrative (4–6 prose paragraphs) interpreting the ML results: "
+        "(1) predicted risk rating and confidence, "
+        "(2) top 3 SHAP drivers by name and sign, "
+        "(3) LIME local explanation insights, "
+        "(4) how this deal's band compares to the training distribution (cite percentages), "
+        "(5) divergence analysis between ML prediction and analyst-scored composite. "
+        "Write in prose only — no bullets, headers, or tables. Cite actual numbers. "
+        "Your ONLY tool call must be: save_to_workspace with path='Agent Notes/neural_slacr.md' "
+        "and the complete narrative as the content argument. "
         "After saving, reply with one sentence confirming the file was saved."
     ),
 }

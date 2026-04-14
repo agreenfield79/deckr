@@ -158,6 +158,21 @@ AGENTS: dict[str, dict] = {
         # overwriting the full deal sheet the tool already wrote.
         "orchestrate_tool_save": True,
     },
+    "interpreter": {
+        "display_name":    "Interpreter Agent",
+        "system_prompt":   "prompts/interpreter_agent.txt",
+        # No context_folders — neural_slacr_output.json is pre-injected by
+        # _inject_interpreter_context() in agent_service.run() before invocation.
+        # The agent's only tool call is save_to_workspace.
+        "context_folders": [],
+        "output_path":     "Agent Notes/neural_slacr.md",
+        "model":           "llama-70b",
+        "mode":            "generate",
+        "conversational":  False,
+        # On-demand only — NOT a pipeline stage; do not add to PIPELINE_STAGES.
+        # Triggered by POST /api/interpret/run from InterpretTab "Run Interpreter" button.
+        "orchestrate_tool_save": True,
+    },
 }
 
 
