@@ -2,11 +2,12 @@ import io
 import logging
 import zipfile
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services import workspace_service
+from services.limiter import limiter
 
 logger = logging.getLogger("deckr.routers.workspace")
 
@@ -63,8 +64,9 @@ def post_folder(body: CreateFolderRequest):
 
 
 @router.get("/export")
-def export_workspace():
-    """ZIP the full workspace tree and stream it as a download."""
+@limiter.limit("3/minute")
+def export_workspace(request: Request):
+    """ZIP the full workspace tree and stream it as a download. Rate-limited: 3/minute per IP."""
     root = workspace_service._get_root()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:

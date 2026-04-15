@@ -19,12 +19,13 @@ import json
 import logging
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ml import neural_slacr
 from models.neural_slacr_output import NeuralSlacrOutput
 from services import agent_service, workspace_service
+from services.limiter import limiter
 
 router = APIRouter()
 logger = logging.getLogger("deckr.routers.interpret")
@@ -299,7 +300,8 @@ def _parse_financial_ratios(inputs: dict) -> None:
 
 
 @router.post("/run", response_model=NeuralSlacrOutput)
-def run_interpreter(body: RunRequest):
+@limiter.limit("2/minute")
+def run_interpreter(request: Request, body: RunRequest):
     # --- 1. Load SLACR dimension scores ---
     inputs: dict[str, float] = {}
     try:

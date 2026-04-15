@@ -31,8 +31,8 @@ def resolve_path(relative_path: str) -> Path:
         logger.warning("Path traversal attempt blocked: %s", relative_path)
         from fastapi import HTTPException
         raise HTTPException(
-            status_code=400,
-            detail=f"Path '{relative_path}' escapes the workspace root",
+            status_code=403,
+            detail=f"Access denied: path '{relative_path}' escapes the workspace root",
         )
     return candidate
 

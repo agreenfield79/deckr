@@ -10,6 +10,8 @@ from models.agent import AgentRequest, AgentResponse, PipelineRequest
 from models.slacr import SlacrInput
 from services import agent_registry, agent_service, slacr_service, workspace_service
 from services.event_bus import subscribe, unsubscribe
+from services.limiter import limiter
+from services.security import detect_output_injection, sanitize_message
 
 logger = logging.getLogger("deckr.routers.agent")
 
@@ -60,15 +62,18 @@ def get_registry():
 
 
 @router.post("/pipeline")
-def run_pipeline(body: PipelineRequest) -> StreamingResponse:
+@limiter.limit("2/minute")
+def run_pipeline(request: Request, body: PipelineRequest) -> StreamingResponse:
     """
     Run the full analysis pipeline: Financial → Risk → Packaging → Review.
     Returns an NDJSON stream of progress events so the frontend can update
     progressively without waiting for all four agents to complete.
+    Rate-limited: 2 requests/minute per IP (4-agent sequential chain).
     """
     logger.info("POST /agent/pipeline session=%s", body.session_id)
+    safe_message = sanitize_message(body.message or "", source="pipeline")
     return StreamingResponse(
-        agent_service.run_pipeline_stream(body.session_id, body.message),
+        agent_service.run_pipeline_stream(body.session_id, safe_message),
         media_type="application/x-ndjson",
     )
 
@@ -114,11 +119,16 @@ async def agent_events(request: Request) -> StreamingResponse:
 
 
 @router.post("/{agent_name}")
-def invoke_agent(agent_name: str, body: AgentRequest) -> AgentResponse:
-    """Invoke an agent — conversation turn or ad-hoc action message."""
+@limiter.limit("10/minute")
+def invoke_agent(request: Request, agent_name: str, body: AgentRequest) -> AgentResponse:
+    """
+    Invoke an agent — conversation turn or ad-hoc action message.
+    Rate-limited: 10 requests/minute per IP.
+    """
+    safe_message = sanitize_message(body.message, source=agent_name)
     logger.info(
         "POST /agent/%s session=%s msg_len=%d action=%s",
-        agent_name, body.session_id, len(body.message), body.action_type or "chat",
+        agent_name, body.session_id, len(safe_message), body.action_type or "chat",
     )
 
     # When action_type is set, auto-resolve save_path from agent's action_map
@@ -130,7 +140,7 @@ def invoke_agent(agent_name: str, body: AgentRequest) -> AgentResponse:
 
     result = agent_service.run(
         agent_name=agent_name,
-        message=body.message,
+        message=safe_message,
         session_id=body.session_id,
         messages=body.messages,
         save_to_workspace=body.save_to_workspace or bool(body.action_type),
@@ -138,8 +148,10 @@ def invoke_agent(agent_name: str, body: AgentRequest) -> AgentResponse:
         action_type=body.action_type,
         tools=body.tools,
     )
+    reply = result["reply"]
+    detect_output_injection(reply, agent_name)
     return AgentResponse(
-        reply=result["reply"],
+        reply=reply,
         agent_name=agent_name,
         session_id=body.session_id,
         saved_to=result.get("saved_to"),
@@ -147,14 +159,23 @@ def invoke_agent(agent_name: str, body: AgentRequest) -> AgentResponse:
 
 
 @router.post("/{agent_name}/run")
+@limiter.limit("5/minute")
 def run_agent(
+    request: Request,
     agent_name: str,
     body: AgentRequest,
     background_tasks: BackgroundTasks,
 ) -> AgentResponse:
-    """Single-shot run — always saves primary output; queues sub-saves for financial agent."""
+    """
+    Single-shot run — always saves primary output; queues sub-saves for financial agent.
+    Rate-limited: 5 requests/minute per IP (LLM + file I/O).
+    """
     agent = agent_registry.get_agent(agent_name)
     save_path = body.save_path or agent["output_path"]
+    safe_message = sanitize_message(
+        body.message or f"Run {agent['display_name']} — generate comprehensive analysis.",
+        source=f"{agent_name}/run",
+    )
     logger.info(
         "POST /agent/%s/run session=%s → primary save: %s",
         agent_name, body.session_id, save_path,
@@ -162,7 +183,7 @@ def run_agent(
 
     result = agent_service.run(
         agent_name=agent_name,
-        message=body.message or f"Run {agent['display_name']} — generate comprehensive analysis.",
+        message=safe_message,
         session_id=body.session_id,
         messages=body.messages,
         save_to_workspace=True,
@@ -202,8 +223,10 @@ def run_agent(
 
     all_files = ([save_path] + queued_paths) if queued_paths else None
 
+    reply = result["reply"]
+    detect_output_injection(reply, agent_name)
     return AgentResponse(
-        reply=result["reply"],
+        reply=reply,
         agent_name=agent_name,
         session_id=body.session_id,
         saved_to=result.get("saved_to"),

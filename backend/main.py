@@ -6,6 +6,9 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 load_dotenv()
 
@@ -94,6 +97,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Deckr API", version="0.1.0", lifespan=lifespan)
+
+# ---------------------------------------------------------------------------
+# Rate limiting (Step 30.3) — slowapi, keyed by remote IP
+# Limiter instance lives in services/limiter.py to avoid circular imports.
+# ---------------------------------------------------------------------------
+from services.limiter import limiter  # noqa: E402 (after app creation)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
