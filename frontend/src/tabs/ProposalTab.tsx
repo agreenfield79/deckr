@@ -36,8 +36,10 @@ function reconstructDealSheet(
 ): string {
   const normalized = original.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const headingEscaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // [^\n]* after the section name tolerates trailing spaces/line-breaks that
+  // the deckr agent sometimes appends to headings (e.g. "## 5. Loan Structure  ")
   const pattern = new RegExp(
-    `(## \\d+\\. ${headingEscaped}\\n+)([\\s\\S]*?)(?=\\n## \\d+\\.|$)`,
+    `(## \\d+\\. ${headingEscaped}[^\\n]*\\n+)([\\s\\S]*?)(?=\\n## \\d+\\.|$)`,
   )
   return normalized.replace(pattern, `$1${newContent.trim()}\n`)
 }

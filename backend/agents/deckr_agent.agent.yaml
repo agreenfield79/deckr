@@ -48,11 +48,38 @@ instructions: |
   ## 3. Performance Summary
   [Revenue trend (cite figures), EBITDA, net income, DSCR. Cite actual dollar figures.]
 
-  ## 4. Ability to Repay
-  [DSCR, annual debt service, operating cash flow. Frame positively with actual figures.]
+  ## 4. Credit Rationale
+  [3–5 sentences. Cover: (1) primary qualitative strength — capital structure, management
+  depth, or market position; (2) the single most material credit consideration, stated factually
+  and concisely; (3) the specific mitigant for that consideration. Do NOT repeat DSCR, revenue,
+  or EBITDA figures — those are already in Section 3 (Performance Summary).]
 
-  ## 5. Bidding Instructions
-  [Loan structure, collateral offered, target close timeline, contact/next step.]
+  ## 5. Loan Structure
+
+  | Term | Memo | Proposed |
+  |---|---|---|
+  | Structure | [loan type and term verbatim from Section 12 of memo] | [borrower-favorable recommendation — e.g. shorter term or more flexible structure if profile supports it] |
+  | Rate | [rate from Section 12 of memo] | [borrower-favorable recommendation — e.g. tighter spread if credit quality warrants] |
+  | Repayment | [repayment schedule from Section 12 of memo] | [borrower-favorable recommendation — e.g. longer IO period if cash flow supports it] |
+  | Collateral | [collateral asset class only from Section 12 — no dollar values or LTV] | [borrower-favorable recommendation — e.g. reduced pledge if leverage is low; "None" if unsecured] |
+  | Guaranty | [guaranty requirement from Section 12] | [borrower-favorable recommendation] |
+  | Target Close | [timeline from Section 12] | [borrower-favorable recommendation — e.g. tighter close if borrower is organized] |
+  | Financial Covenants | [thresholds from Section 12 — e.g. DSCR ≥ X, Debt/EBITDA ≤ X] | [borrower-favorable recommendation — e.g. slightly looser thresholds where headroom is strong] |
+  | Reporting | [reporting requirements from Section 12] | [borrower-favorable recommendation] |
+  | Prepayment | [prepayment terms from Section 12] | [borrower-favorable recommendation — e.g. shorter lockout or no penalty] |
+  | Conditions Precedent | [key conditions from Section 12] | [borrower-favorable recommendation — streamlined if credit profile is strong] |
+
+  For the Memo column, draw all values directly and verbatim from Section 12 of memo.md.
+  Do not invent or estimate any figures not found in the credit memorandum.
+  For the Proposed column, recommend terms that are realistic but favorable to the borrower —
+  drawing on the borrower's financial strength, comparable market transactions for similar
+  credit profiles, and the objective of preserving negotiating leverage. Proposed terms should
+  differ meaningfully from Memo where the borrower's profile justifies it, but remain within
+  market norms. Do not fabricate benchmarks.
+
+  ## 6. Bidding Instructions
+  [Describe in 3-5 sentences: (1) how interested lenders/investors may request the supporting underwriting package and due diligence materials (e.g. secure data room link, Dropbox, direct email request), (2) how to submit a proposal or letter of intent (LOI), and (3) Q&A process for lender questions and response turnaround.]
+  Contact: [Full Name], [Title], [Company], [Phone], [Email], [Data Room URL or "Available upon request"]
 
   STEP 3 — SAVE (MANDATORY):
   Append the following disclosure as the final line of the deal sheet, after all content:
