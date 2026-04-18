@@ -26,6 +26,7 @@ export function useAgent() {
   const [runningAgent, setRunningAgent] = useState<string | null>(null)
   const [isPipelineRunning, setIsPipelineRunning] = useState(false)
   const [pipelineSteps, setPipelineSteps] = useState<PipelineStepState[]>([])
+  const [pipelineTotalMs, setPipelineTotalMs] = useState<number | null>(null)
 
   // Keep a ref for messages so callbacks always have the latest value
   const messagesRef = useRef(messages)
@@ -123,6 +124,7 @@ export function useAgent() {
       status: 'pending',
     }))
     setPipelineSteps(initialSteps)
+    setPipelineTotalMs(null)
 
     // Announce pipeline start in chat
     setMessages((prev) => [
@@ -191,6 +193,9 @@ export function useAgent() {
             (event.steps_failed ?? 0) > 0
               ? ` (${event.steps_failed} step(s) failed)`
               : ''
+          if (event.total_elapsed_ms) {
+            setPipelineTotalMs(event.total_elapsed_ms)
+          }
           setMessages((prev) => [
             ...prev,
             {
@@ -236,6 +241,7 @@ export function useAgent() {
     runPipeline,
     isPipelineRunning,
     pipelineSteps,
+    pipelineTotalMs,
     clearHistory,
   }
 }

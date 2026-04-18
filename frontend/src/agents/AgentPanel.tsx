@@ -26,6 +26,7 @@ export default function AgentPanel() {
     runPipeline,
     isPipelineRunning,
     pipelineSteps,
+    pipelineTotalMs,
     clearHistory,
   } = useAgent()
 
@@ -138,6 +139,7 @@ export default function AgentPanel() {
         agentActivity={agentActivity}
         pipelineSteps={pipelineSteps}
         isPipelineRunning={isPipelineRunning}
+        pipelineTotalMs={pipelineTotalMs}
       />
 
       {/* Message list */}

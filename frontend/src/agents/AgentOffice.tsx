@@ -133,9 +133,10 @@ interface AgentOfficeProps {
   agentActivity: AgentActivityState
   pipelineSteps: PipelineStepState[]
   isPipelineRunning: boolean
+  pipelineTotalMs: number | null
 }
 
-export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRunning }: AgentOfficeProps) {
+export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRunning, pipelineTotalMs }: AgentOfficeProps) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(LS_KEY) === 'true'
@@ -171,6 +172,22 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
               Pipeline
             </span>
           )}
+          {!isPipelineRunning && pipelineTotalMs !== null && (() => {
+            const totalSec = pipelineTotalMs / 1000
+            const display = totalSec >= 60
+              ? `${Math.floor(totalSec / 60)}m ${Math.round(totalSec % 60)}s`
+              : `${totalSec.toFixed(0)}s`
+            const hasError = pipelineSteps.some((s) => s.status === 'error')
+            return (
+              <span className={`text-[8px] font-semibold px-1 py-0.5 rounded ${
+                hasError
+                  ? 'text-[#da1e28] bg-[#ffd7d9]'
+                  : 'text-[#198038] bg-[#defbe6]'
+              }`}>
+                {hasError ? '⚠' : '✓'} {display}
+              </span>
+            )
+          })()}
           {collapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
         </span>
       </button>
