@@ -173,16 +173,31 @@ def link_industry_to_article(naics_code: str, article_url: str) -> bool:
 def get_deal_graph(deal_id: str) -> dict[str, Any]:
     """Return all nodes and relationships scoped to a deal_id."""
     nodes_result = _run(
-        "MATCH (n {deal_id: $deal_id}) RETURN n",
+        "MATCH (n {deal_id: $deal_id}) RETURN labels(n) AS labels, properties(n) AS props",
         {"deal_id": deal_id}
     )
     rels_result = _run(
-        "MATCH (a {deal_id: $deal_id})-[r]-(b) RETURN a, type(r) AS rel_type, b",
+        """
+        MATCH (a {deal_id: $deal_id})-[r]-(b)
+        RETURN properties(a) AS source, type(r) AS rel_type, properties(b) AS target
+        """,
         {"deal_id": deal_id}
     )
+    nodes = [
+        {"labels": row.get("labels", []), **dict(row.get("props") or {})}
+        for row in (nodes_result or [])
+    ]
+    relationships = [
+        {
+            "source": dict(row.get("source") or {}),
+            "type":   row.get("rel_type"),
+            "target": dict(row.get("target") or {}),
+        }
+        for row in (rels_result or [])
+    ]
     return {
-        "nodes": nodes_result or [],
-        "relationships": rels_result or [],
+        "nodes": nodes,
+        "relationships": relationships,
     }
 
 
