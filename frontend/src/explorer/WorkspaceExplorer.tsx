@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { FilePlus, FolderPlus, RefreshCw, Search, Download } from 'lucide-react'
+import { FilePlus, FolderPlus, RefreshCw, Search, Download, Trash2 } from 'lucide-react'
 import FileTreeNode from './FileTreeNode'
 import ContextMenu, { type ContextMenuState } from './ContextMenu'
 import { useProject } from '../context/ProjectContext'
@@ -126,6 +126,17 @@ export default function WorkspaceExplorer() {
     document.body.removeChild(a)
   }
 
+  const handleClearWorkspace = async () => {
+    if (!confirm('Clear workspace? This will permanently delete all files in every folder. Folder structure is preserved. This cannot be undone.')) return
+    try {
+      const res = await workspaceApi.clearWorkspace()
+      await refreshTree()
+      alert(`Workspace cleared — ${res.deleted_count} file${res.deleted_count === 1 ? '' : 's'} deleted.`)
+    } catch {
+      alert('Clear failed. Check that the backend is running.')
+    }
+  }
+
   const displayTree = filterTree(tree, search)
 
   return (
@@ -152,6 +163,13 @@ export default function WorkspaceExplorer() {
           onClick={handleExport}
         >
           <Download size={13} />
+        </button>
+        <button
+          className="p-1.5 text-[#525252] hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+          title="Clear workspace — delete all files, preserve folders"
+          onClick={handleClearWorkspace}
+        >
+          <Trash2 size={13} />
         </button>
         <button
           className="p-1.5 text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8] rounded transition-colors ml-auto"

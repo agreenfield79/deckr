@@ -13,24 +13,29 @@ interface AgentCard {
   activeColor: string
 }
 
-// Pre-processing card — rendered full-width above the 2×2 analytical grid
+// Pre-processing card — rendered full-width above the analytical grid
 const EXTRACTION_CARD: AgentCard = {
   key: 'extraction', label: 'Extraction', abbr: 'Ex', activeColor: 'ring-[#d74108] bg-[#fff2e8]',
 }
 
-// Analytical pipeline cards — rendered in a 4-column grid (Phase 27: 8 cards).
+// Post-processing card — rendered full-width below the analytical grid
+const DECKR_CARD: AgentCard = {
+  key: 'deckr', label: 'Deckr', abbr: 'Dk', activeColor: 'ring-[#ff832b] bg-[#fff2e8]',
+}
+
+// Analytical pipeline cards — rendered in a 4-column grid (Phase 28: 8 cards).
 // Row 1 (parallel analysis stage): Financial | Industry | Collateral | Guarantor
-// Row 2 (sequential post-analysis): Risk | Packaging | Review | Deckr
-// This grouping makes the parallel/sequential pipeline stages visually apparent.
+// Row 2 (sequential post-analysis): Risk | Interpreter | Packaging | Review
+// Extraction (pre) and Deckr (post) are rendered as separate full-width cards.
 const AGENT_CARDS: AgentCard[] = [
-  { key: 'financial',  label: 'Financial',  abbr: 'F',   activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
-  { key: 'industry',   label: 'Industry',   abbr: 'In',  activeColor: 'ring-[#198038] bg-[#defbe6]' },
-  { key: 'collateral', label: 'Collateral', abbr: 'Co',  activeColor: 'ring-[#9f1853] bg-[#fff0f7]' },
-  { key: 'guarantor',  label: 'Guarantor',  abbr: 'G',   activeColor: 'ring-[#b28600] bg-[#fdf6dd]' },
-  { key: 'risk',       label: 'Risk',       abbr: 'R',   activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
-  { key: 'packaging',  label: 'Packaging',  abbr: 'P',   activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
-  { key: 'review',     label: 'Review',     abbr: 'Rev', activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
-  { key: 'deckr',      label: 'Deckr',      abbr: 'Dk',  activeColor: 'ring-[#ff832b] bg-[#fff2e8]' },
+  { key: 'financial',    label: 'Financial',    abbr: 'F',    activeColor: 'ring-[#0f62fe] bg-[#edf4ff]' },
+  { key: 'industry',     label: 'Industry',     abbr: 'In',   activeColor: 'ring-[#198038] bg-[#defbe6]' },
+  { key: 'collateral',   label: 'Collateral',   abbr: 'Co',   activeColor: 'ring-[#9f1853] bg-[#fff0f7]' },
+  { key: 'guarantor',    label: 'Guarantor',    abbr: 'G',    activeColor: 'ring-[#b28600] bg-[#fdf6dd]' },
+  { key: 'risk',         label: 'Risk',         abbr: 'R',    activeColor: 'ring-[#6929c4] bg-[#f6f2ff]' },
+  { key: 'interpreter',  label: 'Interpreter',  abbr: 'Int',  activeColor: 'ring-[#005d5d] bg-[#d9fbfb]' },
+  { key: 'packaging',    label: 'Packaging',    abbr: 'P',    activeColor: 'ring-[#0043ce] bg-[#edf4ff]' },
+  { key: 'review',       label: 'Review',       abbr: 'Rev',  activeColor: 'ring-[#007d79] bg-[#d9fbfb]' },
 ]
 
 const LS_KEY = 'deckr:agentOfficeCollapsed'
@@ -208,7 +213,7 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
             />
           </div>
 
-          {/* Analysis — 4-column grid: [Financial | Industry | Collateral | Guarantor] then [Risk | Packaging | Review] */}
+          {/* Analysis — 4-column grid: [Financial | Industry | Collateral | Guarantor] then [Risk | Interpreter | Packaging | Review] */}
           <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mb-1 px-0.5">
             Analysis
           </p>
@@ -226,6 +231,19 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
                 />
               )
             })}
+          </div>
+
+          {/* Output — Deckr Agent, full-width below the analytical grid */}
+          <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mt-2 mb-1 px-0.5">
+            Output
+          </p>
+          <div className="mb-1">
+            <AgentStatusCard
+              card={DECKR_CARD}
+              status={agentActivity[DECKR_CARD.key]?.status ?? 'idle'}
+              pipelineStatus={pipelineByAgent.current[DECKR_CARD.key]?.status}
+              since={agentActivity[DECKR_CARD.key]?.since}
+            />
           </div>
 
           {/* Coordination Agent — greyed out until future phase */}

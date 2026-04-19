@@ -15,6 +15,11 @@ export const deleteFile = (path: string) =>
     `/workspace/file?path=${encodeURIComponent(path)}`,
   )
 
+export const clearWorkspace = () =>
+  del<{ cleared: boolean; deleted_count: number; files: string[] }>(
+    '/workspace/clear',
+  )
+
 export const createFolder = (path: string) =>
   post<{ created: boolean; path: string }>('/workspace/folder', { path })
 
