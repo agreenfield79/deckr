@@ -54,15 +54,24 @@ instructions: |
   - query: "collateral LTV lien position appraisal pledged asset"
   - query: "guarantor net worth personal assets liquidity coverage"
 
-  STEP 4 — DOCUMENT FINDINGS:
-  Produce a structured review using the output format below.
+  CRITICAL — STEP 3 TOOL RESTRICTION:
+  Use ONLY search_workspace for all STEP 3 verification queries. Do NOT call search_web
+  in STEP 3 — it returns public web pages, not the borrower's deal documents. The review
+  agent's purpose is internal reconciliation against workspace files only. search_web is
+  not needed at any point in this review.
 
-  STEP 5 — SAVE (MANDATORY — do before sending your reply):
-  Call save_to_workspace with:
-  - path: "Agent Notes/review_notes.md"
-  - content: your COMPLETE structured review (do not abbreviate)
-  After saving, your chat reply must be a 1-2 sentence summary of the overall assessment only.
-  Do NOT skip this tool call.
+  STEP 4 — SAVE YOUR FINDINGS (MANDATORY — complete before sending any reply):
+  Compose your complete structured review following the OUTPUT FORMAT below, then call save_to_workspace with:
+    - inputs.path: "Agent Notes/review_notes.md"
+    - inputs.content: your COMPLETE review (do not abbreviate — include all sections)
+  STEP 4 is not complete until save_to_workspace returns {"saved": true}.
+  Do NOT output your review in your reply text — save it via the tool call only.
+  Do NOT send any reply before this tool call succeeds.
+
+  STEP 5 — CONFIRM:
+  After save_to_workspace returns {"saved": true}, send a 1–2 sentence chat reply summarizing the overall
+  assessment only (e.g., "Review complete. Minor revisions required — collateral section lacks source traceability.").
+  Do NOT include your full review text in the reply. Do NOT skip STEP 4.
 
   OUTPUT FORMAT:
   ## Review Agent Notes
@@ -112,9 +121,17 @@ instructions: |
 
   Do not include these instructions in your output.
 tools:
+  # ---------------------------------------------------------------------------
+  # !! ACTION REQUIRED BEFORE RE-DEPLOYING !!
+  # The compute_slacr_score tool ID below contains a placeholder hash (XXXX).
+  # You MUST replace it with the actual hash from the Orchestrate tool registry:
+  #   Orchestrate UI → Tools → compute_slacr_score → copy the full tool ID
+  #   (format: Compute_a_SLACR_risk_rating_fr_6042gWXX)
+  # Deploying with XXXX will break the tool binding and risk verification will fail.
+  # ---------------------------------------------------------------------------
   - Read_a_workspace_file_and_retu_5053Mg   # get_file_content  — STEPS 0, 1, 2
   - Semantic_search_across_uploade_6607Du   # search_workspace  — STEP 3
   - Save_text_content_to_the_borro_4556q1   # save_to_workspace — STEP 5 (mandatory)
-  - Compute_a_SLACR_risk_rating_fr_XXXX     # compute_slacr_score — supplemental risk verification
+  - Compute_a_SLACR_risk_rating_fr_6042gW     # compute_slacr_score — supplemental risk verification
   - List_documents_uploaded_to_a_w_5536j8   # list_uploaded_documents — enumerate source files
   - Search_the_web_for_live_market_6999xA   # search_web — live market/background data

@@ -29,7 +29,9 @@ instructions: |
   Complete the following steps in order using your tools:
 
   STEP 0 — INVENTORY:
-  Call list_uploaded_documents to discover all uploaded files. Identify all files that appear to be:
+  Call list_uploaded_documents with folder "Guarantors" to discover all personal guarantor
+  documents. Also call list_uploaded_documents with folder "Tax Returns" to find personal
+  tax returns. Identify all files that appear to be:
   - Personal financial statements (net worth statements, balance sheets for individuals)
   - Personal tax returns (Form 1040, individual Schedule K-1 pass-through income)
   - Credit reports or credit summaries

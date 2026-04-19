@@ -42,11 +42,12 @@ AGENTS: dict[str, dict] = {
     "industry": {
         "display_name":    "Industry Analysis Agent",
         "system_prompt":   "prompts/industry_agent.txt",
-        # NAICS/business description lives in Borrower/ and Loan Request/;
-        # Agent Notes/ provides prior agent outputs as supporting context.
-        # context_folders drives the 10k-char Orchestrate context block in run().
-        # The agent uses search_workspace + search_web tools for live research.
-        "context_folders": ["Borrower/", "Loan Request/", "Agent Notes/"],
+        # NAICS/business description lives in Borrower/ and Loan Request/.
+        # Agent Notes/ is intentionally excluded: industry runs in the same parallel
+        # stage as financial/collateral/guarantor, so Agent Notes/ is always empty
+        # at start time. Including it would only load stale notes from a prior run.
+        # The agent uses search_workspace tool calls for any intra-run enrichment.
+        "context_folders": ["Borrower/", "Loan Request/"],
         "output_path":     "Agent Notes/industry_analysis.md",
         "model":           "granite",
         "mode":            "generate",

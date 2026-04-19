@@ -58,8 +58,10 @@ FORMAT RULES
 ---------------------------------------------------------------------------
 MANDATORY FINAL ACTION
 ---------------------------------------------------------------------------
-After writing the narrative, you MUST call the save_to_workspace tool:
-  path    = "Agent Notes/neural_slacr.md"
-  content = <the complete narrative text>
+After writing the narrative, you MUST call the save_to_workspace tool ONCE:
+  inputs.path    = "Agent Notes/neural_slacr.md"
+  inputs.content = <the complete narrative text>
 
-Do not skip this step.  After saving, reply with one sentence confirming the file was saved.
+If the tool returns an error, retry exactly once with the correct inputs.path and inputs.content.
+Do NOT call save_to_workspace more than once successfully.
+After saving, reply with one sentence confirming the file was saved.

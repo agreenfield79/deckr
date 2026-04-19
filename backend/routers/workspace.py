@@ -46,6 +46,23 @@ def delete_file(path: str):
     return {"deleted": True, "path": path}
 
 
+@router.delete("/clear")
+def clear_workspace():
+    """Delete all files in the workspace, preserving folder structure."""
+    root = workspace_service._get_root()
+    deleted = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            rel = str(path.relative_to(root)).replace("\\", "/")
+            try:
+                workspace_service.delete_file(rel)
+                deleted.append(rel)
+            except Exception as e:
+                logger.warning("clear_workspace: failed to delete %s — %s", rel, e)
+    logger.info("clear_workspace: deleted %d files", len(deleted))
+    return {"cleared": True, "deleted_count": len(deleted), "files": deleted}
+
+
 class RenameRequest(BaseModel):
     old_path: str
     new_path: str

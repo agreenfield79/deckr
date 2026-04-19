@@ -52,10 +52,14 @@ def save_to_workspace(path: str = None, content: str = None, **kwargs) -> dict:
     """
     if path is None or content is None:
         missing = [f for f, v in [('path', path), ('content', content)] if v is None]
-        msg = f'ERROR: Required parameter(s) {missing} were not provided to save_to_workspace. ' \
-              f'Call again with both "path" (workspace-relative file path) and "content" (text to write).'
+        msg = (
+            f'Missing required parameter(s): {missing}. '
+            f'Call save_to_workspace again with both '
+            f'"inputs.path" (workspace-relative file path, e.g. "Agent Notes/neural_slacr.md") '
+            f'and "inputs.content" (the full text to write).'
+        )
         logger.warning("tool_service.save_to_workspace: missing required args %s", missing)
-        return {'error': msg, 'saved': False}
+        raise HTTPException(status_code=422, detail=msg)
     if kwargs:
         logger.debug("tool_service.save_to_workspace: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service
@@ -64,8 +68,17 @@ def save_to_workspace(path: str = None, content: str = None, **kwargs) -> dict:
     return {"saved": True, "path": path, "bytes": len(content)}
 
 
-def get_file_content(path: str, **kwargs) -> str:
+def get_file_content(path: str = None, **kwargs) -> str:
     """Read a workspace file and return its text content."""
+    if path is None:
+        msg = (
+            'Missing required parameter: path. '
+            'Call get_file_content again with '
+            '"inputs.path" set to the workspace-relative file path '
+            '(e.g. "Agent Notes/neural_slacr.md").'
+        )
+        logger.warning("tool_service.get_file_content: missing required arg 'path'")
+        raise HTTPException(status_code=422, detail=msg)
     if kwargs:
         logger.debug("tool_service.get_file_content: ignoring extra kwargs %s", list(kwargs.keys()))
     from services import workspace_service

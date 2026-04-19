@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from models.tool import ToolRequest, ToolResponse
 from services import tool_service
@@ -25,6 +25,8 @@ def invoke_tool(tool_name: str, body: ToolRequest) -> ToolResponse:
     try:
         result = tool_service.dispatch(tool_name, body.inputs)
         return ToolResponse(tool_name=tool_name, result=result)
+    except HTTPException:
+        raise  # Let 422 (missing save_to_workspace args) propagate so Orchestrate signals the model to retry
     except ValueError as e:
         logger.warning("tools.invoke: bad request for '%s' — %s", tool_name, e)
         return ToolResponse(tool_name=tool_name, result=None, error=str(e))

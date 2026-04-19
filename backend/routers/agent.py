@@ -249,15 +249,17 @@ _SLACR_DIMENSION_MAP = {
 
 def _parse_slacr_scores(text: str) -> dict:
     """
-    Parse dimension scores from SLACR agent output (agent scale: 5=best, 1=worst)
-    and convert to service scale (1=best, 5=worst) via: service_score = 6 - agent_score.
-    Falls back to 3 (neutral) for any dimension not found.
+    Parse dimension scores from SLACR agent output and map to service field names.
+
+    Both the agent prompt and slacr_service.compute() use the same convention:
+      1 = lowest risk (best)  ·  5 = highest risk (worst)
+    No inversion is applied. Falls back to 3 (neutral) for any dimension not found.
     """
     rows = re.findall(r"\|([^|]+)\|[^|]*\|\s*(\d)\s*\|", text)
     result: dict[str, int] = {}
     for label, score_str in rows:
         agent_score = int(score_str)
-        service_score = max(1, min(5, 6 - agent_score))
+        service_score = max(1, min(5, agent_score))   # no inversion — 1=best in both agent and service
         for pattern, field in _SLACR_DIMENSION_MAP.items():
             if field not in result and re.search(pattern, label, re.IGNORECASE):
                 result[field] = service_score

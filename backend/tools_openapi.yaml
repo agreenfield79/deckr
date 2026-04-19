@@ -36,9 +36,9 @@ paths:
       summary: Save text content to the borrower workspace
       description: >
         Use this tool whenever you need to persist a document, summary, memo,
-        analysis, or any text output to the borrower's workspace on IBM Cloud
-        Object Storage. Provide the relative file path (e.g.
-        "Deck/executive_summary.md") and the full text content to write.
+        analysis, or any text output to the borrower's workspace. Provide the
+        relative file path (e.g. "Agent Notes/collateral_memo.md") and the full
+        text content to write.
 
         This is an agent-initiated save — distinct from the automatic
         save_to_workspace flag. Use it when you want to explicitly record a
@@ -134,9 +134,11 @@ paths:
         whether text has been extracted (extracted=true means the file is
         searchable via search_workspace).
 
-        Default folder is "Financials". You can also query "Deck", "Analysis",
-        "SLACR", or any other workspace subfolder. Use this tool before
-        attempting to search or read specific files to confirm they exist.
+        Valid source-document upload folders are "Borrower", "Loan Request",
+        "Financials", and "SLACR". DO NOT query "Deck/" or "Agent Notes/" —
+        those folders contain agent-generated output, not uploaded source
+        documents. Use this tool before attempting to search or read specific
+        files to confirm they exist.
       requestBody:
         required: true
         content:
@@ -151,9 +153,11 @@ paths:
                       type: string
                       default: Financials
                       description: >
-                        Workspace folder name to list. Examples: "Financials",
-                        "Deck", "Analysis", "SLACR". Defaults to "Financials"
-                        if not provided.
+                        Workspace folder name to list. Valid source folders:
+                        "Borrower", "Loan Request", "Financials", "SLACR".
+                        DO NOT use "Deck" or "Agent Notes" — those are
+                        agent-output folders, not upload targets. Defaults
+                        to "Financials" if not provided.
       responses:
         "200":
           description: List of files in the folder

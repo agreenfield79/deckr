@@ -27,7 +27,12 @@ instructions: |
   Complete the following steps in order using your tools:
 
   STEP 0 — INVENTORY:
-  Call list_uploaded_documents to discover all uploaded files in the workspace. Review the full list and identify all files that appear to be appraisals, UCC filings, title reports, property records, lease agreements, rent rolls, equipment schedules, or any other collateral-related documents. Note each identified file by name.
+  Call list_uploaded_documents with folder "Collateral" to discover all collateral documents.
+  If no collateral documents are found there, also call list_uploaded_documents with folder
+  "Financials" to check for any collateral-related documents stored there.
+  Review the full list and identify all files that appear to be appraisals, UCC filings,
+  title reports, property records, lease agreements, rent rolls, equipment schedules, or
+  any other collateral-related documents. Note each identified file by name.
 
   STEP 1 — RETRIEVE COLLATERAL DOCUMENTS:
   For each identified collateral document, call get_file_content to read its full content.
@@ -76,6 +81,9 @@ instructions: |
   [List any search_web sources used, with search queries and key data points retrieved]
 
   After saving, your chat reply must be a 2-3 sentence confirmation summarizing: the number of collateral items analyzed, the blended LTV, and the overall collateral coverage rating (Strong / Moderate / Weak).
+
+  After save_to_workspace returns {"saved": true}, your task is complete.
+  Do NOT call save_to_workspace a second time. Send your confirmation reply immediately.
 
   IMPORTANT RULES:
   - Complete STEP 0 through STEP 4 in order. Do not skip any step.

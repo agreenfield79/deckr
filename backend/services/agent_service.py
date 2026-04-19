@@ -8,7 +8,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from services import agent_registry, event_bus, orchestrate_client, watsonx_client, workspace_service
+from services import agent_registry, event_bus, interpret_service, orchestrate_client, watsonx_client, workspace_service
 from services.extraction_service import get_extracted_text
 
 logger = logging.getLogger("deckr.agent_service")
@@ -25,10 +25,14 @@ logger = logging.getLogger("deckr.agent_service")
 #                    No inter-agent dependency — all self-sufficient from raw uploads.
 #   3. Risk        — sequential, isolated thread; reads all analysis outputs from
 #                    workspace via tool calls (no thread history required).
-#   4. Packaging   — sequential, isolated thread; assembles deck from workspace files.
-#   5. Review      — sequential, SHARES packaging's thread so GPT-OSS 120B already
-#                    has the full deck in thread memory; retrieves source files for
-#                    cross-referencing without needing to re-read the full deck.
+#   4. Interpreter — ML inference pre-hook (interpret_service.run_neural_slacr_pipeline)
+#                    fires first (synchronous, fast), writes neural_slacr_output.json +
+#                    template narrative. Interpreter agent then enriches the narrative.
+#                    If ML inference fails the agent stage is skipped gracefully.
+#   5. Packaging   — sequential, isolated thread; assembles deck from workspace files;
+#                    reads Agent Notes/neural_slacr.md for Section 11 ML validation.
+#   6. Review      — sequential, ISOLATED thread (see comment in loop below).
+#   7. Deckr       — sequential, isolated thread; borrower-facing deal sheet.
 #
 # Phase 21 expansion: replace ["financial", "industry"] with
 #   ["financial", "industry", "collateral"]
@@ -39,9 +43,10 @@ PIPELINE_STAGES: list[list[str]] = [
     ["extraction"],
     ["financial", "industry", "collateral", "guarantor"],   # parallel isolated threads — final pipeline shape
     ["risk"],
+    ["interpreter"],  # ML inference pre-hook runs first, then agent enriches narrative
     ["packaging"],
     ["review"],
-    ["deckr"],    # Stage 6 — borrower-facing advocacy deal sheet
+    ["deckr"],    # Stage 7 — borrower-facing advocacy deal sheet
 ]
 
 # Flat sequence derived from stages — used for _PIPELINE_PROMPTS lookup and display
@@ -1004,8 +1009,9 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "the complete deal sheet text as the content argument. "
         "After saving, reply with one sentence confirming the file was saved."
     ),
-    # Interpreter is on-demand only (not a pipeline stage); this entry is provided
-    # for completeness and is used when the router passes no explicit message override.
+    # Interpreter runs after the ML inference pre-hook in the pipeline.
+    # The pre-hook writes neural_slacr_output.json and a template narrative;
+    # this prompt drives the agent to enrich it with AI-generated prose.
     "interpreter": (
         "Run Interpreter Agent. "
         "The Neural SLACR model output JSON is already pre-loaded in your context "
@@ -1018,8 +1024,11 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "(4) how this deal's band compares to the training distribution (cite percentages), "
         "(5) divergence analysis between ML prediction and analyst-scored composite. "
         "Write in prose only — no bullets, headers, or tables. Cite actual numbers. "
-        "Your ONLY tool call must be: save_to_workspace with path='Agent Notes/neural_slacr.md' "
-        "and the complete narrative as the content argument. "
+        "Your ONLY tool call must be save_to_workspace. "
+        "Provide inputs.path = 'Agent Notes/neural_slacr.md' "
+        "and inputs.content = your complete narrative text. "
+        "If the tool returns an error, retry once with the correct arguments. "
+        "Do not call save_to_workspace more than once. "
         "After saving, reply with one sentence confirming the file was saved."
     ),
 }
@@ -1122,6 +1131,43 @@ def run_pipeline_stream(session_id: str, message: str = ""):
             #     accumulation from the five prior agents from overwhelming it.
             #     Review retrieves everything it needs via explicit tool calls.
             agent_name = stage[0]
+
+            # ── ML inference pre-hook (interpreter stage only) ────────────────
+            # Runs synchronously before the Orchestrate agent is invoked.
+            # Writes SLACR/neural_slacr_output.json and a template narrative to
+            # Agent Notes/neural_slacr.md.  If it fails, emit a step_error and
+            # skip the agent invocation — packaging will still run (no slacr.md).
+            if agent_name == "interpreter":
+                yield json.dumps({
+                    "type":  "ml_inference_start",
+                    "agent": "interpreter",
+                }) + "\n"
+                try:
+                    interpret_service.run_neural_slacr_pipeline()
+                    yield json.dumps({
+                        "type":  "ml_inference_done",
+                        "agent": "interpreter",
+                    }) + "\n"
+                    logger.info(
+                        "agent_service.run_pipeline_stream: ML pre-hook complete session=%s",
+                        session_id,
+                    )
+                except Exception as ml_exc:
+                    logger.warning(
+                        "agent_service.run_pipeline_stream: ML pre-hook failed — %s. "
+                        "Skipping interpreter agent stage. session=%s",
+                        ml_exc, session_id,
+                    )
+                    yield json.dumps({
+                        "type":      "step_error",
+                        "agent":     "interpreter",
+                        "step":      stage_step_nums["interpreter"],
+                        "error":     f"ML inference failed — interpreter stage skipped: {ml_exc}",
+                        "elapsed_ms": 0,
+                    }) + "\n"
+                    steps_failed += 1
+                    continue  # skip to the next pipeline stage (packaging)
+
             if agent_name == "review":
                 # Review runs on its own isolated thread (Bug 3e fix).
                 # Sharing packaging's thread was unreliable — packaging's thread
@@ -1133,13 +1179,15 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 # listing every file to read.  All files are already saved to the
                 # workspace by the time review runs, so tool calls are sufficient.
                 agent_thread_id = f"{pipeline_thread_id}-review"
-            elif agent_name in ("packaging", "risk", "deckr"):
+            elif agent_name in ("packaging", "risk", "deckr", "interpreter"):
                 # packaging: assembles the deck from workspace files; does not
                 #   need thread history from the analysis chain.
                 # risk: reads all four analysis agent outputs from workspace via
                 #   tool calls; does not need prior thread context.
                 # deckr: reads memo.md and financial_analysis.md via tool calls;
                 #   must not carry 30+ turns of prior agent history.
+                # interpreter: reads pre-injected neural_slacr_output.json; must
+                #   not carry risk-agent thread history.
                 # All get their own isolated threads.
                 agent_thread_id = f"{pipeline_thread_id}-{agent_name}"
             else:
@@ -1233,7 +1281,7 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 "type":         "step_done",
                 "agent":        agent_name_out,
                 "step":         sn,
-                "saved_to":     result_or_exc.get("saved_to"),
+                "saved_to":     "Agent Notes/neural_slacr.md" if agent_name_out == "interpreter" else result_or_exc.get("saved_to"),
                 "elapsed_ms":   elapsed,
                 "reply_preview": reply_preview,
             }) + "\n"
