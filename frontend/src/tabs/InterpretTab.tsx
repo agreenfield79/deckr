@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Brain, ChevronDown, ChevronRight, Loader2, Printer, BarChart2, Network } from 'lucide-react'
+import { Brain, ChevronDown, ChevronRight, Loader2, Printer, BarChart2 } from 'lucide-react'
 import * as interpretApi from '../api/interpret'
 import type { NeuralSlacrOutput } from '../api/interpret'
 import { getFile } from '../api/workspace'
@@ -17,6 +17,13 @@ import { useSession } from '../hooks/useSession'
 import { useToast } from '../context/ToastContext'
 import { useProject } from '../context/ProjectContext'
 import type { SlacrOutput } from '../types/slacr'
+import FinancialSummaryGrid from '../components/FinancialSummaryGrid'
+import LimeExplanationChart from '../components/LimeExplanationChart'
+import RiskScoreGauge from '../components/RiskScoreGauge'
+import DealGraph from '../components/DealGraph'
+import ExternalNetworkGraph from '../components/ExternalNetworkGraph'
+import { getFinancialSummary, getShapLime } from '../api/financials'
+import type { FinancialSummaryResponse, ShapLimeResponse } from '../api/financials'
 
 const NARRATIVE_PATH = 'Agent Notes/neural_slacr.md'
 
@@ -27,12 +34,6 @@ interface RatioRow {
   current_ratio: number | null
   ebitda_margin: number | null
   funded_debt_to_ebitda: number | null
-}
-
-interface GraphSummary {
-  node_counts?: Record<string, number>
-  relationship_counts?: Record<string, number>
-  deal_id?: string
 }
 
 /** Convert NeuralSlacrOutput input_values to a minimal SlacrOutput for the radar chart. */
@@ -77,9 +78,11 @@ export default function InterpretTab() {
   // Ratio dashboard state
   const [ratios, setRatios]           = useState<RatioRow[]>([])
   const [ratiosOpen, setRatiosOpen]   = useState(true)
-  // Deal graph summary state
-  const [graphSummary, setGraphSummary]   = useState<GraphSummary | null>(null)
-  const [graphOpen, setGraphOpen]         = useState(false)
+  // Financial summary grid state
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummaryResponse | null>(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  // SHAP/LIME from SQL state
+  const [shapLime, setShapLime] = useState<ShapLimeResponse | null>(null)
 
   // -------------------------------------------------------------------------
   // On mount: restore last-run results without re-triggering the model
@@ -104,18 +107,19 @@ export default function InterpretTab() {
       if (deal.deal_id) {
         const ratioRes = await get<{ ratios: RatioRow[] }>(`/financials/ratios/${deal.deal_id}`)
         setRatios(ratioRes.ratios ?? [])
+
+        // Financial summary
+        getFinancialSummary(deal.deal_id).then((s) => {
+          if (s) setFinancialSummary(s)
+        }).catch(() => {})
+
+        // SHAP/LIME from SQL
+        getShapLime(deal.deal_id).then((s) => {
+          if (s) setShapLime(s)
+        }).catch(() => {})
       }
     } catch {
       // Ratios not yet available — not an error
-    }
-    // Load deal graph summary sidecar
-    try {
-      const graphRes = await getFile('Agent Notes/deal_graph_summary.json')
-      if (graphRes.content) {
-        setGraphSummary(JSON.parse(graphRes.content) as GraphSummary)
-      }
-    } catch {
-      // Graph summary not yet generated
     }
     setLoadingInit(false)
   }, [])
@@ -283,12 +287,12 @@ export default function InterpretTab() {
           {/* Results */}
           {modelOutput && !running && (
             <>
-              {/* Prediction summary card */}
+              {/* Prediction summary card — with Risk Score Gauge */}
               <div
-                className="rounded-lg border-2 p-4 flex items-center justify-between"
+                className="rounded-lg border-2 p-4 flex items-center justify-between gap-4"
                 style={{ borderColor: ratingColor, backgroundColor: `${ratingColor}10` }}
               >
-                <div>
+                <div className="flex-1">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
                     ML Predicted Rating
                   </p>
@@ -299,6 +303,11 @@ export default function InterpretTab() {
                     Confidence: {(modelOutput.probability * 100).toFixed(1)}%
                   </p>
                 </div>
+                <RiskScoreGauge
+                  score={modelOutput.composite_score}
+                  rating={modelOutput.predicted_rating}
+                  size={120}
+                />
                 <div className="text-right space-y-1">
                   <div>
                     <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider">
@@ -328,15 +337,30 @@ export default function InterpretTab() {
                   </div>
                   <div>
                     <p className="text-[11px] font-medium text-[#525252] mb-1">
-                      SLACR Risk Profile (Analyst Scores)
+                      LIME Local Explanation
                     </p>
-                    <SlacrRadarChart data={toSlacrOutput(modelOutput)} />
+                    {shapLime?.lime_values ? (
+                      <LimeExplanationChart limeValues={shapLime.lime_values} />
+                    ) : (
+                      <div>
+                        <p className="text-[11px] font-medium text-[#525252] mb-1">
+                          SLACR Risk Profile (Analyst Scores)
+                        </p>
+                        <SlacrRadarChart data={toSlacrOutput(modelOutput)} />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <p className="text-[11px] font-medium text-[#525252] mb-1">
                       Score Distribution (Training Set)
                     </p>
                     <ScoreDistributionChart data={modelOutput} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-medium text-[#525252] mb-1">
+                      SLACR Risk Profile (Analyst Scores)
+                    </p>
+                    <SlacrRadarChart data={toSlacrOutput(modelOutput)} />
                   </div>
                   <div>
                     <p className="text-[11px] font-medium text-[#525252] mb-1">
@@ -488,51 +512,33 @@ export default function InterpretTab() {
             )}
           </div>
 
-          {/* Neo4j Deal Graph Summary */}
-          {graphSummary && (
-            <div className="border border-[#e0e0e0] rounded-lg overflow-hidden">
-              <button
-                className="w-full flex items-center justify-between px-4 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-medium text-[#525252] transition-colors"
-                onClick={() => setGraphOpen(!graphOpen)}
-              >
-                <span className="flex items-center gap-2">
-                  <Network size={12} className="text-[#6929c4]" />
-                  Neo4j Deal Graph Summary
-                </span>
-                {graphOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              </button>
-              {graphOpen && (
-                <div className="border-t border-[#e0e0e0] px-4 py-3 grid grid-cols-2 gap-4">
-                  {graphSummary.node_counts && Object.keys(graphSummary.node_counts).length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-2">Nodes</p>
-                      <div className="space-y-1">
-                        {Object.entries(graphSummary.node_counts).map(([label, count]) => (
-                          <div key={label} className="flex justify-between items-center text-xs">
-                            <span className="font-mono text-[#161616]">{label}</span>
-                            <span className="text-[#525252] font-semibold">{count}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {graphSummary.relationship_counts && Object.keys(graphSummary.relationship_counts).length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-2">Relationships</p>
-                      <div className="space-y-1">
-                        {Object.entries(graphSummary.relationship_counts).map(([rel, count]) => (
-                          <div key={rel} className="flex justify-between items-center text-xs">
-                            <span className="font-mono text-[11px] text-[#161616]">{rel}</span>
-                            <span className="text-[#525252] font-semibold">{count}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Financial Summary Grid — 3-year side-by-side from SQL */}
+          <div className="border border-[#e0e0e0] rounded-lg overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-medium text-[#525252] transition-colors"
+              onClick={() => setSummaryOpen(!summaryOpen)}
+            >
+              <span className="flex items-center gap-2">
+                <BarChart2 size={12} className="text-[#007d79]" />
+                Financial Summary (3-Year)
+              </span>
+              {summaryOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </button>
+            {summaryOpen && (
+              <div className="border-t border-[#e0e0e0] px-4 pb-4">
+                <FinancialSummaryGrid data={financialSummary} />
+              </div>
+            )}
+          </div>
+
+          {/* Deal Structure Graphs */}
+          <div>
+            <h3 className="text-xs font-semibold text-[#161616] uppercase tracking-wider mb-2">
+              Deal Structure Graph
+            </h3>
+            <DealGraph />
+            <ExternalNetworkGraph />
+          </div>
 
         </div>
       </div>

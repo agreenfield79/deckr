@@ -5,6 +5,7 @@ import MarkdownEditor from '../editor/MarkdownEditor'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TreeNode } from '../types/workspace'
 import { getPipelineHistory, getCurrentDeal } from '../api/pipelineRuns'
+import AgentWordCloud from '../components/AgentWordCloud'
 
 const RESEARCH_FOLDERS = ['Research', 'Industry', 'Management']
 
@@ -213,7 +214,12 @@ export default function ResearchTab() {
       </div>
 
       {/* Editor area */}
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        {/* Agent Word Cloud — above the file editor */}
+        <div className="shrink-0 px-2 pt-2">
+          <AgentWordCloud />
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden">
         {loadingFile ? (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs text-[#8d8d8d]">Loading…</span>
@@ -239,6 +245,7 @@ export default function ResearchTab() {
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {/* Hidden flat-render print portal for the current note */}

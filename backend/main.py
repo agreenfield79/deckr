@@ -26,7 +26,7 @@ if not os.getenv("IBMCLOUD_API_KEY"):
     sys.exit(1)
 
 from routers import agent, workspace, forms, upload, deck, deckr, status, risk, tools, interpret
-from routers import financials, graph, projections, schema
+from routers import financials, graph, projections, schema, slacr, mongo
 
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
@@ -158,6 +158,8 @@ app.include_router(financials.router,  prefix="/api/financials",  tags=["financi
 app.include_router(graph.router,       prefix="/api/graph",       tags=["graph"])
 app.include_router(projections.router, prefix="/api/projections", tags=["projections"])
 app.include_router(schema.router,      prefix="/api/schema",      tags=["schema"])
+app.include_router(slacr.router,       prefix="/api/slacr",       tags=["slacr"])
+app.include_router(mongo.router,       prefix="/api/mongo",       tags=["mongo"])
 
 
 @app.get("/api/health", tags=["health"])

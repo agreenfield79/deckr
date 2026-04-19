@@ -3,7 +3,8 @@ import { Download, FileText, Loader2 } from 'lucide-react'
 import * as deckApi from '../api/deck'
 import * as slacrApi from '../api/slacr'
 import { getExtractedFinancials } from '../api/financials'
-import type { ExtractedFinancials } from '../api/financials'
+import type { ExtractedFinancials, RatioRow, CovenantRow } from '../api/financials'
+import { getRatios, getCovenants } from '../api/financials'
 import type { SlacrOutput } from '../types/slacr'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
@@ -35,6 +36,8 @@ export default function FinalTab() {
   const [slacrData, setSlacrData] = useState<SlacrOutput | null>(null)
   const [financials, setFinancials] = useState<ExtractedFinancials | null>(null)
   const [projectionsData, setProjectionsData] = useState<ProjectionsOutput | null>(null)
+  const [ratios, setRatios] = useState<RatioRow[]>([])
+  const [covenants, setCovenants] = useState<CovenantRow[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
@@ -48,9 +51,13 @@ export default function FinalTab() {
         getExtractedFinancials().then(setFinancials).catch(() => {}),
         getCurrentDeal().then(async (deal) => {
           if (deal.deal_id) {
-            getProjectionsOutput(deal.deal_id).then((p) => {
-              if (p) setProjectionsData(p)
-            }).catch(() => {})
+            await Promise.all([
+              getProjectionsOutput(deal.deal_id).then((p) => {
+                if (p) setProjectionsData(p)
+              }).catch(() => {}),
+              getRatios(deal.deal_id).then(setRatios).catch(() => {}),
+              getCovenants(deal.deal_id).then(setCovenants).catch(() => {}),
+            ])
           }
         }).catch(() => {}),
       ])
@@ -188,13 +195,20 @@ export default function FinalTab() {
 
                 {/* Inline charts after relevant sections */}
                 {name.includes('Financial Analysis') && (
-                  <RevenueEbitdaChart data={financials} />
+                  <>
+                    <RevenueEbitdaChart data={financials} />
+                    {ratios.length > 0 && <RatioDashboardInline ratios={ratios} />}
+                  </>
                 )}
                 {(name === 'Leverage' || name.includes('Leverage & Capitalization')) && (
                   <LeverageChart data={financials} />
                 )}
                 {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
                   <SlacrRadarChart data={slacrData} />
+                )}
+                {/* Covenant table after covenant / risk section */}
+                {(name.includes('Covenant') || name.includes('Risk Rating')) && covenants.length > 0 && (
+                  <CovenantTableInline covenants={covenants} />
                 )}
                 {/* Projections section: inject all three projection charts for print */}
                 {(name.includes('Covenant Compliance') || name.includes('Financial Projections')) && (
@@ -216,6 +230,117 @@ export default function FinalTab() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Print-optimized inline table components
+// ---------------------------------------------------------------------------
+
+function fmt(v: number | null | undefined): string {
+  if (v == null) return '—'
+  const abs = Math.abs(v)
+  const sign = v < 0 ? '-' : ''
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(0)}K`
+  return `${sign}$${abs.toFixed(0)}`
+}
+
+function RatioDashboardInline({ ratios }: { ratios: RatioRow[] }) {
+  return (
+    <div className="mt-3 mb-2" style={{ pageBreakInside: 'avoid' }}>
+      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
+        Historical Financial Ratios
+      </p>
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-[#f4f4f4]">
+            <th className="text-left py-1.5 px-2 border border-[#e0e0e0] font-semibold text-[#161616]">Metric</th>
+            {ratios.map((r) => (
+              <th key={r.fiscal_year} className="text-right py-1.5 px-2 border border-[#e0e0e0] font-semibold text-[#161616]">
+                {r.fiscal_year}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {([
+            { label: 'DSCR',               key: 'historical_dscr' as const,        threshold: 1.25, higherBetter: true },
+            { label: 'Fixed Charge Cov.',  key: 'fixed_charge_coverage' as const,  threshold: 1.25, higherBetter: true },
+            { label: 'Leverage Ratio',     key: 'leverage_ratio' as const,         threshold: 4,    higherBetter: false },
+            { label: 'Funded Debt/EBITDA', key: 'funded_debt_to_ebitda' as const,  threshold: 4,    higherBetter: false },
+            { label: 'Current Ratio',      key: 'current_ratio' as const,          threshold: 1.0,  higherBetter: true },
+            { label: 'EBITDA Margin',      key: 'ebitda_margin' as const,          threshold: null, higherBetter: true },
+          ]).map(({ label, key, threshold, higherBetter }) => (
+            <tr key={key} className="hover:bg-[#f9f9f9]">
+              <td className="py-1.5 px-2 text-[#525252] border border-[#e0e0e0]">{label}</td>
+              {ratios.map((r) => {
+                const v = r[key]
+                let color = '#161616'
+                if (v != null && threshold != null) {
+                  const pass = higherBetter ? v >= threshold : v <= threshold
+                  const warn = higherBetter ? v >= threshold * 0.9 : v <= threshold * 1.1
+                  color = pass ? '#198038' : warn ? '#b28600' : '#da1e28'
+                }
+                return (
+                  <td key={r.fiscal_year} className="py-1.5 px-2 text-right border border-[#e0e0e0] font-mono"
+                    style={{ color }}>
+                    {key === 'ebitda_margin' && v != null ? `${(v * 100).toFixed(1)}%` : v != null ? v.toFixed(2) : '—'}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CovenantTableInline({ covenants }: { covenants: CovenantRow[] }) {
+  return (
+    <div className="mt-3 mb-2" style={{ pageBreakInside: 'avoid' }}>
+      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
+        Covenant Compliance
+      </p>
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-[#f4f4f4]">
+            {['Metric', 'Threshold', 'Actual', 'Status', 'Agent'].map((h) => (
+              <th key={h} className="text-left py-1.5 px-2 border border-[#e0e0e0] font-semibold text-[#161616]">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {covenants.map((c, i) => {
+            const pass = c.pass_fail === true || c.pass_fail === 'true' || (c.pass_fail as unknown) === 1
+            return (
+              <tr key={i} className="hover:bg-[#f9f9f9]">
+                <td className="py-1.5 px-2 text-[#161616] border border-[#e0e0e0]">
+                  {c.metric}
+                  {c.description && <span className="text-[#8d8d8d] ml-1">— {c.description}</span>}
+                </td>
+                <td className="py-1.5 px-2 text-right text-[#525252] border border-[#e0e0e0] font-mono">
+                  {c.threshold_value != null ? c.threshold_value.toFixed(2) : '—'}
+                </td>
+                <td className="py-1.5 px-2 text-right text-[#161616] border border-[#e0e0e0] font-mono">
+                  {c.actual_value != null ? c.actual_value.toFixed(2) : '—'}
+                </td>
+                <td className="py-1.5 px-2 text-center border border-[#e0e0e0]">
+                  <span style={{ color: pass ? '#198038' : '#da1e28', fontWeight: 600 }}>
+                    {pass ? '✓ Pass' : '✗ Fail'}
+                  </span>
+                </td>
+                <td className="py-1.5 px-2 text-[#8d8d8d] border border-[#e0e0e0]">
+                  {c.source_agent ?? '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

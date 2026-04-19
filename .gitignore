@@ -5,6 +5,8 @@ backend/.env.staging
 backend/workspace_root/
 backend/venv/
 backend/.deckr_embeddings.json
+backend/data/*.db
+backend/data/.chroma/
 __pycache__/
 *.pyc
 node_modules/

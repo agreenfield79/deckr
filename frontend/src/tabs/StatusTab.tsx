@@ -6,6 +6,7 @@ import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TabId } from './TabBar'
 import { useConfig } from '../context/ConfigContext'
 import { getPipelineHistory, type PipelineRun } from '../api/pipelineRuns'
+import PipelineGantt from '../components/PipelineGantt'
 
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
@@ -262,6 +263,9 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
 
       {/* Pipeline Run History */}
       <PipelineHistoryPanel />
+
+      {/* Pipeline Run Timeline — Gantt */}
+      <PipelineGantt />
     </div>
   )
 }

@@ -133,5 +133,106 @@ def get_forecast(request: Request, deal_id: str | None = None):
 
 @router.get("/summary")
 def get_summary(request: Request, deal_id: str | None = None):
-    """v_financial_summary equivalent — per (entity_id, fiscal_year). Wired in Phase 10."""
-    return _NOT_IMPL
+    """3-year side-by-side income + balance + cashflow summary for a deal (v_financial_summary)."""
+    try:
+        if deal_id is None:
+            return {"status": "error", "message": "deal_id required"}
+        from services.db_factory import get_sql_session
+        from models.sql_models import IncomeStatement, BalanceSheet, CashFlowStatement, Entity
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            entity_ids = [
+                r[0] for r in session.execute(
+                    select(Entity.entity_id).where(Entity.deal_id == deal_id)
+                ).all()
+            ]
+            if not entity_ids:
+                return {"deal_id": deal_id, "rows": []}
+
+            inc_rows = session.execute(
+                select(
+                    IncomeStatement.fiscal_year,
+                    IncomeStatement.revenue,
+                    IncomeStatement.gross_profit,
+                    IncomeStatement.ebitda,
+                    IncomeStatement.ebit,
+                    IncomeStatement.net_income,
+                    IncomeStatement.interest_expense,
+                    IncomeStatement.depreciation_amortization,
+                    IncomeStatement.operating_expenses,
+                ).where(IncomeStatement.entity_id.in_(entity_ids))
+                .order_by(IncomeStatement.fiscal_year)
+            ).all()
+
+            bs_rows = session.execute(
+                select(
+                    BalanceSheet.total_assets,
+                    BalanceSheet.total_liabilities,
+                    BalanceSheet.total_equity,
+                    BalanceSheet.total_current_assets,
+                    BalanceSheet.total_current_liabilities,
+                    BalanceSheet.cash_and_equivalents,
+                    BalanceSheet.long_term_debt,
+                    BalanceSheet.short_term_debt,
+                ).where(BalanceSheet.entity_id.in_(entity_ids))
+                .order_by(BalanceSheet.as_of_date)
+            ).all()
+
+            cf_rows = session.execute(
+                select(
+                    CashFlowStatement.fiscal_year,
+                    CashFlowStatement.operating_cash_flow,
+                    CashFlowStatement.capital_expenditures,
+                    CashFlowStatement.free_cash_flow,
+                ).where(CashFlowStatement.entity_id.in_(entity_ids))
+                .order_by(CashFlowStatement.fiscal_year)
+            ).all()
+
+            def _f(v):
+                return float(v) if v is not None else None
+
+            income = [
+                {
+                    "fiscal_year": r.fiscal_year,
+                    "revenue": _f(r.revenue),
+                    "gross_profit": _f(r.gross_profit),
+                    "ebitda": _f(r.ebitda),
+                    "ebit": _f(r.ebit),
+                    "net_income": _f(r.net_income),
+                    "interest_expense": _f(r.interest_expense),
+                    "depreciation_amortization": _f(r.depreciation_amortization),
+                    "operating_expenses": _f(r.operating_expenses),
+                }
+                for r in inc_rows
+            ]
+            balance = [
+                {
+                    "total_assets": _f(r.total_assets),
+                    "total_liabilities": _f(r.total_liabilities),
+                    "total_equity": _f(r.total_equity),
+                    "current_assets": _f(r.total_current_assets),
+                    "current_liabilities": _f(r.total_current_liabilities),
+                    "cash": _f(r.cash_and_equivalents),
+                    "long_term_debt": _f(r.long_term_debt),
+                    "short_term_debt": _f(r.short_term_debt),
+                }
+                for r in bs_rows
+            ]
+            cashflow = [
+                {
+                    "fiscal_year": r.fiscal_year,
+                    "operating_cash_flow": _f(r.operating_cash_flow),
+                    "capex": _f(r.capital_expenditures),
+                    "free_cash_flow": _f(r.free_cash_flow),
+                }
+                for r in cf_rows
+            ]
+            return {
+                "deal_id": deal_id,
+                "income_statement": income,
+                "balance_sheet": balance,
+                "cash_flow": cashflow,
+            }
+    except Exception as exc:
+        logger.warning("get_summary failed: %s", exc)
+        return {"status": "error", "message": str(exc)}

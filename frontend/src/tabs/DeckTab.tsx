@@ -29,6 +29,7 @@ import type { SlacrOutput } from '../types/slacr'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
 import { DscrProjectionChart, LeverageProjectionChart, RevenueEbitdaProjectionChart } from '../charts/ProjectionsChart'
 import { getProjectionsOutput, type ProjectionsOutput } from '../api/projections'
+import RiskConcentrationGraph from '../components/RiskConcentrationGraph'
 
 interface CovenantRow {
   metric: string
@@ -486,6 +487,9 @@ export default function DeckTab() {
             </div>
           )}
         </div>
+
+        {/* Risk Concentration Graph — Guarantors / Loan / Collateral */}
+        <RiskConcentrationGraph />
 
         {/* Pipeline Run Version Picker */}
         {runs.length > 1 && (

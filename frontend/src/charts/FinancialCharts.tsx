@@ -171,6 +171,17 @@ export function ShapWaterfallChart({ data }: InterpretChartsProps) {
       value,
     }))
 
+  // Build color scale only for groups that actually appear in the data — Carbon
+  // Charts warns when color.scale contains a key absent from the rendered groups.
+  const ALL_COLORS: Record<string, string> = {
+    'Increases Risk': '#da1e28',
+    'Reduces Risk':   '#0f62fe',
+  }
+  const presentGroups = [...new Set(chartData.map((d) => d.group))]
+  const colorScale = Object.fromEntries(
+    presentGroups.map((g) => [g, ALL_COLORS[g] ?? '#525252']),
+  )
+
   const options = {
     title: 'SHAP Feature Contributions',
     axes: {
@@ -184,9 +195,7 @@ export function ShapWaterfallChart({ data }: InterpretChartsProps) {
         title: 'SHAP Value (contribution to predicted class)',
       },
     },
-    color: {
-      scale: { 'Increases Risk': '#da1e28', 'Reduces Risk': '#0f62fe' },
-    },
+    color: { scale: colorScale },
     height: '320px',
     toolbar: { enabled: false },
   }
@@ -218,6 +227,16 @@ export function ScoreDistributionChart({ data }: InterpretChartsProps) {
     value: count,
   }))
 
+  // Dynamically build color scale for groups present in data only.
+  const ALL_DIST_COLORS: Record<string, string> = {
+    'Training Records': '#6929c4',
+    'This Deal':        '#ff832b',
+  }
+  const presentDistGroups = [...new Set(chartData.map((d) => d.group))]
+  const distColorScale = Object.fromEntries(
+    presentDistGroups.map((g) => [g, ALL_DIST_COLORS[g] ?? '#525252']),
+  )
+
   const options = {
     title: 'Risk Band Distribution (Training Set)',
     axes: {
@@ -231,9 +250,7 @@ export function ScoreDistributionChart({ data }: InterpretChartsProps) {
         title: 'Rating Band',
       },
     },
-    color: {
-      scale: { 'Training Records': '#6929c4', 'This Deal': '#ff832b' },
-    },
+    color: { scale: distColorScale },
     height: '260px',
     toolbar: { enabled: false },
   }

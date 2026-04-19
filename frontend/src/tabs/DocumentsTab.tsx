@@ -6,6 +6,7 @@ import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
 import * as workspaceApi from '../api/workspace'
 import { getDocumentMetadata, getCurrentDeal, type DocumentMetadata } from '../api/pipelineRuns'
+import DocumentCoverageHeatmap from '../components/DocumentCoverageHeatmap'
 
 // ---------------------------------------------------------------------------
 // Zone definitions
@@ -309,6 +310,9 @@ export default function DocumentsTab() {
             />
           ))}
         </div>
+
+        {/* Document Coverage Heatmap — agents × documents read matrix */}
+        <DocumentCoverageHeatmap />
       </div>
     </div>
   )
