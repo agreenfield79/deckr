@@ -98,3 +98,52 @@ def export_workspace(request: Request):
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="workspace-export.zip"'},
     )
+
+
+@router.get("/current-deal")
+def get_current_deal():
+    """
+    Return the deal_id + workspace_id for the active workspace.
+    Reads from Financials/extracted_data.json (written by IP1).
+    Returns {deal_id: null, workspace_id: null} if not yet seeded.
+    """
+    try:
+        import json as _json
+        raw = workspace_service.read_file("Financials/extracted_data.json")
+        data = _json.loads(raw) if raw else {}
+        deal_id      = data.get("deal_id") or None
+        workspace_id = data.get("workspace_id") or None
+        # Fallback: try to read from SQL most-recent pipeline run
+        if not deal_id:
+            try:
+                from services.db_factory import get_sql_session
+                from models.sql_models import PipelineRun
+                from sqlalchemy import select
+                with next(get_sql_session()) as session:
+                    row = session.execute(
+                        select(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(1)
+                    ).scalar_one_or_none()
+                    if row:
+                        deal_id      = row.deal_id
+                        workspace_id = row.workspace_id
+            except Exception:
+                pass
+        return {"deal_id": deal_id, "workspace_id": workspace_id}
+    except Exception as exc:
+        logger.warning("get_current_deal failed: %s", exc)
+        return {"deal_id": None, "workspace_id": None}
+
+
+@router.get("/document-metadata")
+def get_document_metadata(deal_id: str | None = None):
+    """
+    Return MongoDB document_index metadata (with agents_read badges).
+    Falls back to empty list if MongoDB is offline.
+    """
+    try:
+        from services import mongo_service
+        docs = mongo_service.get_document_metadata(deal_id=deal_id)
+        return {"documents": docs, "count": len(docs)}
+    except Exception as exc:
+        logger.warning("get_document_metadata failed: %s", exc)
+        return {"documents": [], "count": 0, "error": str(exc)}

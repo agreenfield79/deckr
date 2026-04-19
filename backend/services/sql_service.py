@@ -688,6 +688,66 @@ def insert_projection(row: dict) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Gate-check helpers (IP2 / IP3)
+# ---------------------------------------------------------------------------
+
+def count_financial_ratio_rows(entity_id: str) -> int:
+    """IP2 gate check — total FinancialRatio rows for this entity."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import FinancialRatio
+        from sqlalchemy import select, func
+        with next(get_sql_session()) as session:
+            return session.execute(
+                select(func.count()).where(FinancialRatio.entity_id == entity_id)
+            ).scalar_one()
+    except Exception as exc:
+        logger.warning("count_financial_ratio_rows failed: %s", exc)
+        return 0
+
+
+def count_slacr_score_rows(deal_id: str) -> int:
+    """IP3 gate check — total slacr_scores rows for this deal."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import SlacrScore
+        from sqlalchemy import select, func
+        with next(get_sql_session()) as session:
+            return session.execute(
+                select(func.count()).where(SlacrScore.deal_id == deal_id)
+            ).scalar_one()
+    except Exception as exc:
+        logger.warning("count_slacr_score_rows failed: %s", exc)
+        return 0
+
+
+def get_slacr_shap_lime(deal_id: str) -> dict | None:
+    """Return SHAP/LIME + summary from the most recent slacr_scores row for a deal."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import SlacrScore
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            row = session.execute(
+                select(SlacrScore)
+                .where(SlacrScore.deal_id == deal_id)
+                .order_by(SlacrScore.computed_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "shap_values":     row.shap_values,
+            "lime_values":     row.lime_values,
+            "composite_score": float(row.composite_score or 0),
+            "internal_rating": row.internal_rating,
+        }
+    except Exception as exc:
+        logger.warning("get_slacr_shap_lime failed: %s", exc)
+        return None
+
+
 def insert_covenant_compliance_projection(row: dict) -> bool:
     try:
         from services.db_factory import get_sql_session

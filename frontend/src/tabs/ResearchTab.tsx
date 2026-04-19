@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FilePlus, Printer } from 'lucide-react'
+import { FilePlus, Printer, History } from 'lucide-react'
 import { useProject } from '../context/ProjectContext'
 import MarkdownEditor from '../editor/MarkdownEditor'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TreeNode } from '../types/workspace'
+import { getPipelineHistory, getCurrentDeal } from '../api/pipelineRuns'
 
 const RESEARCH_FOLDERS = ['Research', 'Industry', 'Management']
 
@@ -28,8 +29,25 @@ export default function ResearchTab() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState('')
   const [loadingFile, setLoadingFile] = useState(false)
+  const [runSummary, setRunSummary] = useState<{ count: number; lastRun: string | null; lastStatus: string | null } | null>(null)
 
   const noteRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    getCurrentDeal().then((deal) => {
+      if (deal.deal_id) {
+        getPipelineHistory(deal.deal_id, 20).then((res) => {
+          if (res.runs.length > 0) {
+            setRunSummary({
+              count: res.runs.length,
+              lastRun: res.runs[0].started_at ?? null,
+              lastStatus: res.runs[0].status ?? null,
+            })
+          }
+        }).catch(() => {})
+      }
+    }).catch(() => {})
+  }, [])
 
   const handlePrintNote = () => {
     const el = noteRef.current
@@ -144,6 +162,32 @@ export default function ResearchTab() {
             </button>
           </div>
         </div>
+
+        {/* Pipeline run summary */}
+        {runSummary && (
+          <div className="px-2 py-1.5 border-b border-[#e0e0e0] bg-white">
+            <div className="flex items-center gap-1 text-[10px] text-[#525252]">
+              <History size={10} className="shrink-0 text-[#8d8d8d]" />
+              <span>{runSummary.count} run{runSummary.count !== 1 ? 's' : ''}</span>
+              <span
+                className="px-1 py-0.5 rounded ml-auto"
+                style={{
+                  backgroundColor: runSummary.lastStatus === 'complete' ? '#defbe6' : '#f4f4f4',
+                  color: runSummary.lastStatus === 'complete' ? '#198038' : '#6f6f6f',
+                  fontSize: '9px',
+                  fontWeight: 600,
+                }}
+              >
+                {runSummary.lastStatus ?? 'unknown'}
+              </span>
+            </div>
+            {runSummary.lastRun && (
+              <p className="text-[9px] text-[#a8a8a8] mt-0.5">
+                Last: {new Date(runSummary.lastRun).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto py-1">
           {allFiles.length === 0 ? (

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { CheckCircle, Clock, ArrowRight, RefreshCw, Printer, Server, Database, Cpu } from 'lucide-react'
+import { CheckCircle, Clock, ArrowRight, RefreshCw, Printer, Server, Database, Cpu, History, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStatus } from '../hooks/useStatus'
 import { getDeck } from '../api/deck'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TabId } from './TabBar'
 import { useConfig } from '../context/ConfigContext'
+import { getPipelineHistory, type PipelineRun } from '../api/pipelineRuns'
 
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
@@ -258,6 +259,9 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
 
       {/* System Health */}
       <SystemHealthPanel health={health} loading={healthLoading} onRefresh={refreshHealth} />
+
+      {/* Pipeline Run History */}
+      <PipelineHistoryPanel />
     </div>
   )
 }
@@ -373,6 +377,158 @@ function SystemHealthPanel({ health, loading, onRefresh }: SystemHealthPanelProp
           {!health && !loading && (
             <p className="text-[#6f6f6f] italic">Backend unavailable — health data not loaded.</p>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PipelineHistoryPanel — shows MongoDB pipeline run history
+// ---------------------------------------------------------------------------
+
+function formatElapsed(ms: number | undefined): string {
+  if (!ms) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+}
+
+function formatTs(iso: string | undefined): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return iso }
+}
+
+function PipelineHistoryPanel() {
+  const [expanded, setExpanded]         = useState(false)
+  const [runs, setRuns]                 = useState<PipelineRun[]>([])
+  const [loading, setLoading]           = useState(false)
+  const [expandedRun, setExpandedRun]   = useState<string | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await getPipelineHistory(undefined, 10)
+      setRuns(res.runs ?? [])
+    } catch {
+      setRuns([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (expanded && runs.length === 0) load()
+  }, [expanded])
+
+  const statusColor = (s: string) =>
+    s === 'complete' ? '#24a148' : s === 'running' ? '#0f62fe' : s === 'partial' ? '#f1c21b' : '#da1e28'
+  const statusBg = (s: string) =>
+    s === 'complete' ? '#defbe6' : s === 'running' ? '#edf4ff' : s === 'partial' ? '#fdf6dd' : '#fff1f1'
+
+  return (
+    <div className="mt-4 border border-[#e0e0e0] rounded bg-white overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="flex items-center gap-2">
+          <History size={13} className="text-[#525252]" />
+          Pipeline Run History
+          {runs.length > 0 && (
+            <span className="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#e8e8e8] text-[#525252]">
+              {runs.length} run{runs.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          {expanded && (
+            <button
+              onClick={(e) => { e.stopPropagation(); load() }}
+              disabled={loading}
+              title="Refresh history"
+              className="p-1 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] rounded transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            </button>
+          )}
+          <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-[#e0e0e0]">
+          {loading && (
+            <div className="px-4 py-3 text-xs text-[#6f6f6f] italic">Loading…</div>
+          )}
+          {!loading && runs.length === 0 && (
+            <div className="px-4 py-3 text-xs text-[#6f6f6f] italic">
+              No pipeline runs yet — run the agents to start your first run.
+            </div>
+          )}
+          {!loading && runs.map((run) => {
+            const isOpen = expandedRun === run.pipeline_run_id
+            return (
+              <div key={run.pipeline_run_id} className="border-b border-[#f4f4f4] last:border-b-0">
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[#f4f4f4] transition-colors"
+                  onClick={() => setExpandedRun(isOpen ? null : run.pipeline_run_id)}
+                >
+                  {isOpen ? <ChevronDown size={11} className="shrink-0 text-[#8d8d8d]" /> : <ChevronRight size={11} className="shrink-0 text-[#8d8d8d]" />}
+                  <span
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+                    style={{ color: statusColor(run.status), backgroundColor: statusBg(run.status) }}
+                  >
+                    {run.status}
+                  </span>
+                  <span className="text-[11px] text-[#161616] font-mono truncate flex-1">
+                    {run.pipeline_run_id.slice(0, 12)}…
+                  </span>
+                  <span className="text-[10px] text-[#8d8d8d] shrink-0">{formatTs(run.started_at)}</span>
+                  <span className="text-[10px] text-[#8d8d8d] shrink-0 ml-2">
+                    {formatElapsed(run.total_elapsed_ms)}
+                  </span>
+                </button>
+                {isOpen && run.stages.length > 0 && (
+                  <div className="px-4 pb-2 bg-[#f9f9f9]">
+                    <table className="w-full text-[10px]">
+                      <thead>
+                        <tr className="text-[#8d8d8d] uppercase tracking-wider">
+                          <th className="text-left py-1 pr-2 font-semibold">#</th>
+                          <th className="text-left py-1 pr-2 font-semibold">Agent</th>
+                          <th className="text-left py-1 pr-2 font-semibold">Status</th>
+                          <th className="text-right py-1 font-semibold">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {run.stages.map((s) => (
+                          <tr key={s.stage_order} className="border-t border-[#f0f0f0]">
+                            <td className="py-1 pr-2 text-[#a8a8a8]">{s.stage_order}</td>
+                            <td className="py-1 pr-2 font-medium text-[#161616]">{s.agent_name}</td>
+                            <td className="py-1 pr-2">
+                              <span style={{ color: statusColor(s.status) }}>{s.status}</span>
+                            </td>
+                            <td className="py-1 text-right text-[#525252]">
+                              {formatElapsed(s.elapsed_ms)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {isOpen && run.stages.length === 0 && (
+                  <p className="px-4 pb-2 text-[10px] text-[#a8a8a8] italic bg-[#f9f9f9]">
+                    Stage details not available (run pre-dates Group 3 wiring)
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

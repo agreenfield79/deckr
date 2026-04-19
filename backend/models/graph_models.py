@@ -19,6 +19,8 @@ class NodeLabel:
     PROPERTY = "Property"
     PIPELINE_RUN = "PipelineRun"
     INDUSTRY = "Industry"          # shared lookup — keyed by naics_code, NOT deal_id
+    APPRAISER = "Appraiser"        # IP2 collateral hook — appraiser firm node
+    LIEN = "Lien"                  # IP2 collateral hook — lien on pledged collateral
 
 
 class RelType:
@@ -30,6 +32,8 @@ class RelType:
     OPERATES_IN = "OPERATES_IN"         # Company → Industry
     PART_OF = "PART_OF"                 # Loan → Company (borrower)
     SECURED_BY = "SECURED_BY"           # Loan → Collateral
+    APPRAISED_BY = "APPRAISED_BY"       # Collateral → Appraiser
+    SUBJECT_TO = "SUBJECT_TO"           # Collateral → Lien
 
     # Layer 5B — external world
     MENTIONED_IN = "MENTIONED_IN"       # Industry/Company → NewsArticle
@@ -37,6 +41,7 @@ class RelType:
     SUBJECT_OF = "SUBJECT_OF"           # Individual/Company → LegalAction
     HAS_UCC_FILING = "HAS_UCC_FILING"  # Company → UccFiling
     LOCATED_IN = "LOCATED_IN"           # Company/Property → Region
+    CONNECTED_TO = "CONNECTED_TO"       # cross-entity insider detection
 
 
 # ---------------------------------------------------------------------------
@@ -100,10 +105,15 @@ CREATE CONSTRAINT IF NOT EXISTS FOR (c:Collateral) REQUIRE c.collateral_id IS UN
 CREATE CONSTRAINT IF NOT EXISTS FOR (n:Industry) REQUIRE n.naics_code IS UNIQUE;
 CREATE CONSTRAINT IF NOT EXISTS FOR (n:NewsArticle) REQUIRE n.url IS UNIQUE;
 CREATE CONSTRAINT IF NOT EXISTS FOR (u:UccFiling) REQUIRE u.filing_id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (a:LegalAction) REQUIRE a.action_id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (a:Appraiser) REQUIRE a.appraiser_name IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (l:Lien) REQUIRE l.lien_id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (e:ExternalCompany) REQUIRE e.company_id IS UNIQUE;
 CREATE INDEX IF NOT EXISTS FOR (c:Company) ON (c.deal_id);
 CREATE INDEX IF NOT EXISTS FOR (i:Individual) ON (i.deal_id);
 CREATE INDEX IF NOT EXISTS FOR (l:Loan) ON (l.deal_id);
 CREATE INDEX IF NOT EXISTS FOR (c:Collateral) ON (c.deal_id);
+CREATE INDEX IF NOT EXISTS FOR (l:LegalAction) ON (l.entity_id);
 """
 
 # ---------------------------------------------------------------------------

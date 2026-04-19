@@ -11,11 +11,15 @@ import {
   Check,
   X,
   BarChart2,
+  ShieldCheck,
+  History,
 } from 'lucide-react'
 import * as deckApi from '../api/deck'
 import * as slacrApi from '../api/slacr'
 import { getExtractedFinancials } from '../api/financials'
 import type { ExtractedFinancials } from '../api/financials'
+import { get } from '../api/client'
+import { getPipelineHistory, getCurrentDeal, type PipelineRun } from '../api/pipelineRuns'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import { useToast } from '../context/ToastContext'
 import { useProject } from '../context/ProjectContext'
@@ -24,8 +28,16 @@ import { getRatingColor } from '../types/slacr'
 import type { SlacrOutput } from '../types/slacr'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
 
-function parseSections(markdown: string): Record<string, string> {
-  const sections: Record<string, string> = {}
+interface CovenantRow {
+  metric: string
+  description: string | null
+  threshold_value: number | null
+  actual_value: number | null
+  pass_fail: string | null
+  source_agent: string | null
+}
+
+function parseSections(markdown: string): Record<string, string> {  const sections: Record<string, string> = {}
   // Normalize line endings; accept one or more newlines between heading and content.
   // Agents output single \n between heading and body — \n\n is not guaranteed.
   const normalized = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -72,6 +84,14 @@ export default function DeckTab() {
   const [slacrData, setSlacrData] = useState<SlacrOutput | null>(null)
   const [financials, setFinancials] = useState<ExtractedFinancials | null>(null)
 
+  // Covenant table state
+  const [covenants, setCovenants]       = useState<CovenantRow[]>([])
+  const [covenantOpen, setCovenantOpen] = useState(true)
+  // Run version picker state
+  const [runs, setRuns]                 = useState<PipelineRun[]>([])
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [runPickerOpen, setRunPickerOpen] = useState(false)
+
   const fetchDeck = useCallback(async () => {
     setLoading(true)
     try {
@@ -79,6 +99,24 @@ export default function DeckTab() {
         deckApi.getDeck(),
         slacrApi.getScore().then(setSlacrData).catch(() => {}),
         getExtractedFinancials().then(setFinancials).catch(() => {}),
+        // Covenant table + run picker
+        getCurrentDeal().then(async (deal) => {
+          if (deal.deal_id) {
+            try {
+              const cvRes = await get<{ covenants: CovenantRow[] }>(
+                `/financials/covenants/${deal.deal_id}`
+              )
+              setCovenants(cvRes.covenants ?? [])
+            } catch { /* not yet available */ }
+            try {
+              const histRes = await getPipelineHistory(deal.deal_id, 10)
+              setRuns(histRes.runs ?? [])
+              if (histRes.runs.length > 0 && !selectedRunId) {
+                setSelectedRunId(histRes.runs[0].pipeline_run_id)
+              }
+            } catch { /* not yet available */ }
+          }
+        }).catch(() => {}),
       ])
       if (deckRes.exists && deckRes.content) {
         setDeckContent(deckRes.content)
@@ -357,6 +395,129 @@ export default function DeckTab() {
 
       {/* Section cards */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+
+        {/* Covenant Table */}
+        <div className="border border-[#e0e0e0] rounded overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-3 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-semibold text-[#525252] transition-colors"
+            onClick={() => setCovenantOpen((v) => !v)}
+          >
+            <span className="flex items-center gap-2">
+              <ShieldCheck size={12} className="text-[#0f62fe]" />
+              Covenant Compliance Table
+              {covenants.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#e0e0e0] text-[#525252]">
+                  {covenants.filter(c => c.pass_fail === 'pass').length}/{covenants.length} pass
+                </span>
+              )}
+            </span>
+            {covenantOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </button>
+          {covenantOpen && (
+            <div className="border-t border-[#e0e0e0]">
+              {covenants.length === 0 ? (
+                <p className="px-3 py-3 text-xs text-[#6f6f6f] italic">
+                  No covenants yet — run the pipeline to populate covenant data from SQL.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-[#f4f4f4] text-[10px] text-[#525252] uppercase tracking-wider">
+                        <th className="text-left px-3 py-1.5 font-semibold">Metric</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">Threshold</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">Actual</th>
+                        <th className="text-center px-3 py-1.5 font-semibold">Status</th>
+                        <th className="text-left px-3 py-1.5 font-semibold hidden md:table-cell">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {covenants.map((c, i) => {
+                        const pass = c.pass_fail === 'pass'
+                        const fail = c.pass_fail === 'fail'
+                        return (
+                          <tr key={i} className={`border-t border-[#f4f4f4] ${i % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]'}`}>
+                            <td className="px-3 py-1.5">
+                              <span className="font-medium text-[#161616]">{c.metric}</span>
+                              {c.description && (
+                                <span className="block text-[10px] text-[#8d8d8d]">{c.description}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-[#525252]">
+                              {c.threshold_value !== null ? c.threshold_value.toFixed(2) : '—'}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right font-mono font-semibold ${fail ? 'text-[#da1e28]' : pass ? 'text-[#24a148]' : 'text-[#525252]'}`}>
+                              {c.actual_value !== null ? c.actual_value.toFixed(2) : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              {pass ? (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#defbe6] text-[#198038]">PASS</span>
+                              ) : fail ? (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#fff1f1] text-[#da1e28]">FAIL</span>
+                              ) : (
+                                <span className="text-[10px] text-[#a8a8a8]">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-[10px] text-[#8d8d8d] hidden md:table-cell">
+                              {c.source_agent ?? '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Pipeline Run Version Picker */}
+        {runs.length > 1 && (
+          <div className="border border-[#e0e0e0] rounded overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-semibold text-[#525252] transition-colors"
+              onClick={() => setRunPickerOpen((v) => !v)}
+            >
+              <span className="flex items-center gap-2">
+                <History size={12} className="text-[#525252]" />
+                Pipeline Runs
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#e0e0e0] text-[#525252]">
+                  {runs.length} run{runs.length !== 1 ? 's' : ''}
+                </span>
+              </span>
+              {runPickerOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </button>
+            {runPickerOpen && (
+              <div className="border-t border-[#e0e0e0] divide-y divide-[#f4f4f4]">
+                {runs.map((run, idx) => {
+                  const isSelected = run.pipeline_run_id === selectedRunId
+                  const elapsed = run.total_elapsed_ms
+                  const label = elapsed
+                    ? elapsed < 60000 ? `${(elapsed / 1000).toFixed(0)}s` : `${Math.floor(elapsed / 60000)}m`
+                    : '—'
+                  return (
+                    <button
+                      key={run.pipeline_run_id}
+                      onClick={() => setSelectedRunId(run.pipeline_run_id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2 text-xs text-left transition-colors ${isSelected ? 'bg-[#edf4ff]' : 'hover:bg-[#f4f4f4]'}`}
+                    >
+                      {isSelected ? <Check size={11} className="text-[#0f62fe] shrink-0" /> : <span className="w-[11px] shrink-0" />}
+                      <span className="font-semibold text-[#161616]">Run {runs.length - idx}</span>
+                      <span className="text-[#8d8d8d] text-[10px] flex-1 truncate">
+                        {run.started_at ? new Date(run.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </span>
+                      <span className={`text-[10px] px-1 py-0.5 rounded ${run.status === 'complete' ? 'bg-[#defbe6] text-[#198038]' : 'bg-[#e8e8e8] text-[#525252]'}`}>
+                        {run.status}
+                      </span>
+                      <span className="text-[10px] text-[#8d8d8d] shrink-0">{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {sectionEntries.map(([name, content], idx) => {
           const isExpanded = expanded.has(name)
           const isEditing = editingSection === name

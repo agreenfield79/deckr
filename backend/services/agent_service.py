@@ -978,6 +978,41 @@ def _safe_int_local(val) -> int | None:
         return None
 
 
+def _log_stage(pipeline_state: dict, agent_name: str, stage_order: int,
+               elapsed_ms: int, output_path: str | None = None,
+               status: str = "complete") -> None:
+    """Fire-and-forget stage log: SQL insert + MongoDB append. D-3."""
+    try:
+        from services import sql_service
+        from datetime import datetime, timezone, timedelta
+        completed_at = datetime.now(timezone.utc)
+        started_at   = completed_at - timedelta(milliseconds=max(elapsed_ms, 0))
+        sql_service.insert_stage_log(
+            pipeline_run_id  = pipeline_state.get("pipeline_run_id") or "",
+            agent_name       = agent_name,
+            stage_order      = stage_order,
+            started_at       = started_at,
+            completed_at     = completed_at,
+            status           = status,
+            output_file_path = output_path,
+        )
+    except Exception as exc:
+        logger.warning("_log_stage SQL failed agent=%s — %s", agent_name, exc)
+    # MongoDB append — D-3, separate try so SQL failure doesn't skip it
+    try:
+        from services import mongo_service as _mongo
+        _mongo.append_stage_to_run(
+            pipeline_run_id = pipeline_state.get("pipeline_run_id") or "",
+            agent_name      = agent_name,
+            stage_order     = stage_order,
+            status          = status,
+            elapsed_ms      = max(elapsed_ms, 0),
+            saved_to        = output_path,
+        )
+    except Exception as exc:
+        logger.warning("_log_stage Mongo failed agent=%s — %s", agent_name, exc)
+
+
 def _fire_ip2_hook(agent_name: str, pipeline_state: dict) -> None:
     """
     D-3: dispatch to per-agent IP2 hook. All exceptions logged as warnings — never raises.
@@ -1034,6 +1069,17 @@ def _ip2_industry(pipeline_state: dict) -> None:
     Reads Agent Notes/industry_enrichment.json sidecar if available; otherwise
     the Industry node was already created at IP1 via write_operates_in_relationship
     and no additional write is needed until the structured sidecar exists.
+
+    Sidecar shape:
+      {
+        "naics_code": "5112",
+        "macro_risk_tier": "medium",
+        "geopolitical_risk_tier": "low",
+        "geopolitical_risk_factors": ["tariffs"],
+        "news_articles": [
+          {"url": "https://...", "title": "...", "published_date": "2024-01-01", "source": "Reuters"}
+        ]
+      }
     """
     from services import graph_service
     try:
@@ -1048,6 +1094,24 @@ def _ip2_industry(pipeline_state: dict) -> None:
                 geopolitical_risk_factors=enrichment.get("geopolitical_risk_factors"),
             )
             logger.info("IP2[industry]: Industry node enriched naics_code=%s", naics_code)
+
+            # Create NewsArticle nodes + MENTIONED_IN edges if provided in sidecar
+            articles = enrichment.get("news_articles") or []
+            created = 0
+            for article in articles:
+                if not isinstance(article, dict) or not article.get("url"):
+                    continue
+                ok = graph_service.write_news_article_node(
+                    url=article["url"],
+                    title=article.get("title", ""),
+                    published_date=article.get("published_date"),
+                    source=article.get("source"),
+                )
+                if ok and naics_code:
+                    graph_service.link_industry_to_article(naics_code, article["url"])
+                    created += 1
+            if created:
+                logger.info("IP2[industry]: created %d NewsArticle + MENTIONED_IN edge(s)", created)
     except Exception:
         logger.debug(
             "IP2[industry]: Agent Notes/industry_enrichment.json absent — "
@@ -1060,18 +1124,57 @@ def _ip2_collateral(pipeline_state: dict) -> None:
     Update Neo4j Collateral node with appraiser findings.
     Reads Agent Notes/collateral_enrichment.json sidecar if available; otherwise
     the Collateral node was already seeded from extracted_data.json at IP1.
+
+    Sidecar shape:
+      {
+        "collateral_id": "...",
+        "collateral_type": "real_estate",
+        "appraised_value": 1250000,
+        "appraisals": [
+          {"appraiser_name": "Cushman & Wakefield", "appraisal_date": "2024-03-15", "appraised_value": 1250000}
+        ],
+        "liens": [
+          {"lien_id": "UCC-2024-001", "lien_type": "UCC", "amount": 500000, "secured_party": "First National Bank"}
+        ]
+      }
     """
     from services import graph_service
     try:
         raw = workspace_service.read_file("Agent Notes/collateral_enrichment.json")
         enrichment: dict = json.loads(raw)
+        collateral_id = enrichment.get("collateral_id", "")
         graph_service.write_collateral_node(
             deal_id=pipeline_state.get("deal_id") or "",
-            collateral_id=enrichment.get("collateral_id", ""),
+            collateral_id=collateral_id,
             collateral_type=enrichment.get("collateral_type", "unknown"),
             appraised_value=enrichment.get("appraised_value"),
         )
         logger.info("IP2[collateral]: Collateral node updated from sidecar")
+
+        # Write APPRAISED_BY edges
+        for appraisal in (enrichment.get("appraisals") or []):
+            if not isinstance(appraisal, dict) or not appraisal.get("appraiser_name"):
+                continue
+            graph_service.write_appraised_by_edge(
+                collateral_id=collateral_id,
+                appraiser_name=appraisal["appraiser_name"],
+                appraisal_date=appraisal.get("appraisal_date"),
+                appraised_value=appraisal.get("appraised_value"),
+            )
+            logger.info("IP2[collateral]: APPRAISED_BY edge written — %s", appraisal["appraiser_name"])
+
+        # Write SUBJECT_TO lien edges
+        for lien in (enrichment.get("liens") or []):
+            if not isinstance(lien, dict) or not lien.get("lien_id"):
+                continue
+            graph_service.write_subject_to_lien(
+                collateral_id=collateral_id,
+                lien_id=lien["lien_id"],
+                lien_type=lien.get("lien_type", "UCC"),
+                amount=lien.get("amount"),
+                secured_party=lien.get("secured_party"),
+            )
+            logger.info("IP2[collateral]: SUBJECT_TO lien edge written — %s", lien["lien_id"])
     except Exception:
         logger.debug(
             "IP2[collateral]: Agent Notes/collateral_enrichment.json absent — "
@@ -1085,13 +1188,35 @@ def _ip2_guarantor(pipeline_state: dict) -> None:
     Guarantor Individual nodes were created at IP1. The GUARANTEES relationship
     requires individual entity_ids + loan_terms_id; these are queried from SQL
     via the deal_id so no additional sidecar is needed.
+    If loan_terms_id is absent from pipeline_state, it is looked up from SQL.
     """
     from services import graph_service
     deal_id = pipeline_state.get("deal_id") or ""
+    if not deal_id:
+        logger.debug("IP2[guarantor]: deal_id missing — GUARANTEES edges deferred")
+        return
+
     loan_terms_id = pipeline_state.get("loan_terms_id") or ""
-    if not deal_id or not loan_terms_id:
+    if not loan_terms_id:
+        # Resolve from SQL LoanTerms table
+        try:
+            from services.db_factory import get_sql_session
+            from models.sql_models import LoanTerms
+            from sqlalchemy import select
+            with next(get_sql_session()) as session:
+                lt = session.execute(
+                    select(LoanTerms).where(LoanTerms.deal_id == deal_id).limit(1)
+                ).scalar_one_or_none()
+            if lt:
+                loan_terms_id = str(lt.loan_terms_id)
+                pipeline_state["loan_terms_id"] = loan_terms_id
+                logger.debug("IP2[guarantor]: resolved loan_terms_id=%s from SQL", loan_terms_id)
+        except Exception as _exc:
+            logger.warning("IP2[guarantor]: could not resolve loan_terms_id from SQL — %s", _exc)
+
+    if not loan_terms_id:
         logger.debug(
-            "IP2[guarantor]: deal_id or loan_terms_id missing in pipeline_state — "
+            "IP2[guarantor]: loan_terms_id still missing after SQL lookup — "
             "GUARANTEES edges deferred"
         )
         return
@@ -1113,6 +1238,38 @@ def _ip2_guarantor(pipeline_state: dict) -> None:
             )
     except Exception as exc:
         logger.warning("IP2[guarantor]: GUARANTEES edge write failed — %s", exc)
+
+
+def _ip_deckr_hook(pipeline_state: dict) -> None:
+    """
+    Post-Deckr hook: read the full deal graph from Neo4j and save a summary
+    JSON to Agent Notes/deal_graph_summary.json for the frontend.
+    D-3: all exceptions logged as warnings — never raises.
+    """
+    deal_id = pipeline_state.get("deal_id")
+    if not deal_id:
+        logger.debug("IP[deckr]: deal_id missing — graph summary skipped")
+        return
+    try:
+        from services import graph_service
+        graph = graph_service.get_deal_graph(deal_id)
+        summary = {
+            "deal_id": deal_id,
+            "node_count":         len(graph.get("nodes", [])),
+            "relationship_count": len(graph.get("relationships", [])),
+            "nodes":              graph.get("nodes", []),
+            "relationships":      graph.get("relationships", []),
+        }
+        workspace_service.write_file(
+            "Agent Notes/deal_graph_summary.json",
+            json.dumps(summary, indent=2),
+        )
+        logger.info(
+            "IP[deckr]: deal graph summary saved — %d nodes, %d rels deal_id=%s",
+            summary["node_count"], summary["relationship_count"], deal_id,
+        )
+    except Exception as exc:
+        logger.warning("IP[deckr]: graph summary failed — %s", exc)
 
 
 def _fire_ip3_hook(pipeline_state: dict) -> None:
@@ -1192,8 +1349,120 @@ def _fire_ip3_hook(pipeline_state: dict) -> None:
             )
         else:
             logger.warning("IP3: write_slacr_score returned False for deal_id=%s", deal_id)
+
+        # Insert covenants derived from the financial_ratios.json sidecar
+        _ip3_covenants_from_risk(pipeline_state)
+
+        # IP3 gate check — warn if slacr_scores row is still missing
+        if deal_id:
+            _sc = sql_service.count_slacr_score_rows(deal_id)
+            if _sc == 0:
+                logger.warning(
+                    "IP3 gate: 0 slacr_scores rows for deal_id=%s after risk hook", deal_id
+                )
+            else:
+                logger.info("IP3 gate passed: %d slacr_scores row(s) deal_id=%s", _sc, deal_id)
     except Exception as exc:
         logger.warning("IP3: hook failed — %s", exc)
+
+
+def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
+    """
+    Derive DSCR, leverage, and current-ratio covenants from the financial
+    agent's sidecar and INSERT them as Covenant rows.  Uses the latest
+    fiscal year found in Agent Notes/financial_ratios.json.
+    D-3: all exceptions logged as warnings — never raises.
+    """
+    _COVENANT_THRESHOLDS = [
+        # (metric_key,     display_metric,             threshold,  operator, unit,  description)
+        ("dscr",           "DSCR",                     1.25, "gte", "x",  "Debt Service Coverage Ratio ≥ 1.25x"),
+        ("leverage_ratio", "Leverage (Debt/EBITDA)",   5.00, "lte", "x",  "Total Leverage ≤ 5.0x"),
+        ("current_ratio",  "Current Ratio",            1.00, "gte", "x",  "Current Ratio ≥ 1.0x"),
+    ]
+    try:
+        raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
+        ratios: dict = json.loads(raw)
+    except Exception:
+        logger.debug("IP3[covenants]: Agent Notes/financial_ratios.json absent — skipping covenant INSERT")
+        return
+
+    # Pick the latest fiscal year key
+    latest_year_data: dict | None = None
+    for _yk in sorted(ratios.keys(), reverse=True):
+        _yd = ratios[_yk]
+        if isinstance(_yd, dict):
+            latest_year_data = _yd
+            break
+    if latest_year_data is None:
+        logger.debug("IP3[covenants]: no year data found in financial_ratios.json")
+        return
+
+    from services import sql_service
+    deal_id         = pipeline_state.get("deal_id") or ""
+    pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+    wrote = 0
+    for metric_key, display_metric, threshold, operator, unit, description in _COVENANT_THRESHOLDS:
+        actual = latest_year_data.get(metric_key)
+        if actual is None:
+            continue
+        try:
+            actual_f = float(actual)
+        except (TypeError, ValueError):
+            continue
+        pass_fail = (actual_f >= threshold) if operator == "gte" else (actual_f <= threshold)
+        ok = sql_service.insert_covenant(deal_id, pipeline_run_id, {
+            "covenant_type":    "financial",
+            "description":      description,
+            "metric":           display_metric,
+            "threshold_value":  threshold,
+            "actual_value":     round(actual_f, 4),
+            "unit":             unit,
+            "pass_fail":        pass_fail,
+            "source_agent":     "risk",
+        })
+        if ok:
+            wrote += 1
+    logger.info("IP3[covenants]: wrote %d covenant row(s) deal_id=%s", wrote, deal_id)
+
+
+def _ip3_review_hook(pipeline_state: dict) -> None:
+    """
+    Optional IP3 hook for the Review Agent.
+    Reads Agent Notes/covenant_review.json if the review agent writes it as a
+    structured sidecar (list of {metric, threshold_value, actual_value, pass_fail, ...}).
+    Skips gracefully when the sidecar is absent — D-3.
+    """
+    try:
+        raw = workspace_service.read_file("Agent Notes/covenant_review.json")
+        items: list = json.loads(raw)
+    except Exception:
+        logger.debug("IP3[review]: Agent Notes/covenant_review.json absent — skipping")
+        return
+    if not isinstance(items, list):
+        logger.debug("IP3[review]: covenant_review.json is not a list — skipping")
+        return
+
+    from services import sql_service
+    deal_id         = pipeline_state.get("deal_id") or ""
+    pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+    wrote = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        data = {
+            "covenant_type":    item.get("covenant_type", "financial"),
+            "description":      item.get("description", ""),
+            "metric":           item.get("metric", ""),
+            "threshold_value":  item.get("threshold_value"),
+            "actual_value":     item.get("actual_value"),
+            "unit":             item.get("unit", "x"),
+            "pass_fail":        item.get("pass_fail"),
+            "source_agent":     "review",
+        }
+        ok = sql_service.insert_covenant(deal_id, pipeline_run_id, data)
+        if ok:
+            wrote += 1
+    logger.info("IP3[review]: wrote %d covenant row(s) deal_id=%s", wrote, deal_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1410,7 +1679,9 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                     "agent": "interpreter",
                 }) + "\n"
                 try:
-                    interpret_service.run_neural_slacr_pipeline()
+                    interpret_service.run_neural_slacr_pipeline(
+                        deal_id=_pipeline_state.get("deal_id")
+                    )
                     yield json.dumps({
                         "type":  "ml_inference_done",
                         "agent": "interpreter",
@@ -1525,9 +1796,55 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                         "elapsed_ms":   elapsed,
                         "reply_preview": reply_preview,
                     }) + "\n")
+                    _log_stage(_pipeline_state, agent_name, sn, elapsed,
+                               result_or_exc.get("saved_to"))
 
             for ev in pending_events:
                 yield ev
+
+            # ── IP2 Gate: verify financial_ratios were written to SQL ─────────
+            if _pipeline_state.get("entity_id"):
+                from services import sql_service as _sql_g2
+                _fr_count = _sql_g2.count_financial_ratio_rows(_pipeline_state["entity_id"])
+                if _fr_count == 0:
+                    logger.warning(
+                        "IP2 gate: 0 financial_ratio rows — entity_id=%s session=%s",
+                        _pipeline_state["entity_id"], session_id,
+                    )
+                    yield json.dumps({
+                        "type":       "step_error",
+                        "agent":      "ip2_gate",
+                        "step":       step_num,
+                        "error":      (
+                            "IP2 gate failed: no financial_ratios rows found for "
+                            f"entity_id={_pipeline_state['entity_id']}. "
+                            "Ensure the financial agent writes Agent Notes/financial_ratios.json."
+                        ),
+                        "elapsed_ms": 0,
+                    }) + "\n"
+                    return  # halt — do not start Risk Agent
+                logger.info(
+                    "IP2 gate passed: %d financial_ratio row(s) entity_id=%s session=%s",
+                    _fr_count, _pipeline_state["entity_id"], session_id,
+                )
+            # Soft Neo4j Industry check — warn only, do not halt (D-3)
+            _naics = _pipeline_state.get("naics_code")
+            if _naics:
+                try:
+                    from services import graph_service as _gs
+                    _mrt = _gs.get_industry_macro_risk_tier(_naics)
+                    if _mrt:
+                        logger.info(
+                            "IP2 gate[neo4j]: Industry node macro_risk_tier=%s naics=%s",
+                            _mrt, _naics,
+                        )
+                    else:
+                        logger.warning(
+                            "IP2 gate[neo4j]: Industry node missing macro_risk_tier "
+                            "naics=%s — industry agent sidecar not yet written", _naics,
+                        )
+                except Exception as _neo_exc:
+                    logger.warning("IP2 gate[neo4j]: check failed — %s", _neo_exc)
             continue  # skip the single-agent path below
 
         # ── single-agent path: emit done/error event ──────────────────────────
@@ -1560,6 +1877,11 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 "elapsed_ms":   elapsed,
                 "reply_preview": reply_preview,
             }) + "\n"
+            _log_stage(
+                _pipeline_state, agent_name_out, sn, elapsed,
+                "Agent Notes/neural_slacr.md" if agent_name_out == "interpreter"
+                else result_or_exc.get("saved_to"),
+            )
 
             # ── IP1: seed SQL + Neo4j after extraction ────────────────────────
             if agent_name_out == "extraction":
@@ -1591,11 +1913,43 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                         )
                     except Exception as _pr_exc:
                         logger.warning("IP1: insert_pipeline_run failed — %s", _pr_exc)
+                    # Open MongoDB pipeline_runs document
+                    try:
+                        from services import mongo_service as _mongo_ip1
+                        _mongo_ip1.open_pipeline_run(
+                            pipeline_run_id = _pipeline_state["pipeline_run_id"],
+                            deal_id         = _seed.deal_id or "",
+                            workspace_id    = _seed.workspace_id or "",
+                            total_stages    = len(PIPELINE_SEQUENCE),
+                        )
+                    except Exception as _mpr_exc:
+                        logger.warning("IP1: open_pipeline_run (mongo) failed — %s", _mpr_exc)
                     yield json.dumps({
                         "type":          "ip1_seeded",
                         "deal_id":       _seed.deal_id,
                         "sql_row_count": _seed.sql_row_count,
                     }) + "\n"
+                    # Trigger Phase 10B async enrichment — non-blocking, D-3
+                    if _seed.deal_id:
+                        try:
+                            import asyncio, threading
+                            from services import enrichment_service as _enrich
+                            _ws_root_str = str(workspace_service._get_root())
+                            def _run_enrichment():
+                                asyncio.run(
+                                    _enrich.enrich_deal(_seed.deal_id, _ws_root_str)
+                                )
+                            threading.Thread(
+                                target=_run_enrichment, daemon=True,
+                                name=f"enrichment-{_seed.deal_id[:8]}",
+                            ).start()
+                            logger.info(
+                                "IP1: enrichment thread started deal_id=%s", _seed.deal_id
+                            )
+                        except Exception as _enrich_exc:
+                            logger.warning(
+                                "IP1: enrichment trigger failed — %s", _enrich_exc
+                            )
                 except extraction_persistence_service.ExtractionSeedError as _e:
                     logger.error("IP1 gate FAILED session=%s — %s", session_id, _e)
                     yield json.dumps({
@@ -1615,11 +1969,51 @@ def run_pipeline_stream(session_id: str, message: str = ""):
             elif agent_name_out == "risk":
                 _fire_ip3_hook(_pipeline_state)
 
+            # ── optional covenant update from review agent ────────────────────
+            elif agent_name_out == "review":
+                _ip3_review_hook(_pipeline_state)
+
+            # ── Deckr: save Neo4j deal graph summary to workspace ─────────────
+            elif agent_name_out == "deckr":
+                _ip_deckr_hook(_pipeline_state)
+                # Close MongoDB pipeline_runs document on Deckr completion
+                try:
+                    from services import mongo_service as _mongo_deckr
+                    _mongo_deckr.close_pipeline_run(
+                        pipeline_run_id  = _pipeline_state.get("pipeline_run_id", ""),
+                        status           = "complete",
+                        total_elapsed_ms = int((time.time() - pipeline_start) * 1000),
+                    )
+                except Exception as _mc_exc:
+                    logger.warning("Deckr: close_pipeline_run (mongo) failed — %s", _mc_exc)
+
     total_elapsed = int((time.time() - pipeline_start) * 1000)
     logger.info(
         "agent_service.run_pipeline_stream: complete session=%s done=%d failed=%d elapsed=%dms",
         session_id, steps_done, steps_failed, total_elapsed,
     )
+    # Mark pipeline run as complete in SQL + MongoDB
+    try:
+        from services import sql_service as _sql_fin
+        _pr_status = "complete" if steps_failed == 0 else "partial"
+        _sql_fin.update_pipeline_run(
+            _pipeline_state["pipeline_run_id"],
+            status=_pr_status,
+            stages_completed=list(PIPELINE_SEQUENCE),
+            duration_seconds=total_elapsed // 1000,
+        )
+    except Exception as _fin_exc:
+        logger.warning("pipeline completion: update_pipeline_run failed — %s", _fin_exc)
+    # MongoDB close (idempotent — safe even if Deckr already closed it)
+    try:
+        from services import mongo_service as _mongo_fin
+        _mongo_fin.close_pipeline_run(
+            pipeline_run_id  = _pipeline_state.get("pipeline_run_id", ""),
+            status           = "complete" if steps_failed == 0 else "partial",
+            total_elapsed_ms = total_elapsed,
+        )
+    except Exception as _mfin_exc:
+        logger.warning("pipeline completion: close_pipeline_run (mongo) failed — %s", _mfin_exc)
     yield json.dumps({
         "type":              "pipeline_complete",
         "steps_done":        steps_done,

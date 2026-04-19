@@ -103,6 +103,104 @@ def get_agent_output_versions(deal_id: str, agent_name: str) -> list[dict]:
 # pipeline_runs — MongoDB cache (SQL is authoritative; this is a read cache)
 # ---------------------------------------------------------------------------
 
+def open_pipeline_run(pipeline_run_id: str, deal_id: str,
+                      workspace_id: str, total_stages: int) -> bool:
+    """Open a new pipeline_runs document at the start of a run."""
+    try:
+        db = _db()
+        if db is None:
+            return False
+        db.pipeline_runs.update_one(
+            {"pipeline_run_id": pipeline_run_id},
+            {"$set": {
+                "pipeline_run_id": pipeline_run_id,
+                "deal_id":         deal_id,
+                "workspace_id":    workspace_id,
+                "status":          "running",
+                "total_stages":    total_stages,
+                "stages":          [],
+                "started_at":      _now().isoformat(),
+                "updated_at":      _now().isoformat(),
+            }},
+            upsert=True,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("open_pipeline_run failed: %s", exc)
+        return False
+
+
+def append_stage_to_run(pipeline_run_id: str, agent_name: str,
+                        stage_order: int, status: str = "complete",
+                        elapsed_ms: int = 0,
+                        saved_to: str | None = None) -> bool:
+    """Append one agent stage result to the pipeline_runs.stages[] array."""
+    try:
+        db = _db()
+        if db is None:
+            return False
+        stage_doc = {
+            "agent_name":  agent_name,
+            "stage_order": stage_order,
+            "status":      status,
+            "elapsed_ms":  elapsed_ms,
+            "saved_to":    saved_to,
+            "completed_at": _now().isoformat(),
+        }
+        db.pipeline_runs.update_one(
+            {"pipeline_run_id": pipeline_run_id},
+            {
+                "$push": {"stages": stage_doc},
+                "$set":  {"updated_at": _now().isoformat()},
+            },
+        )
+        return True
+    except Exception as exc:
+        logger.warning("append_stage_to_run failed: %s", exc)
+        return False
+
+
+def close_pipeline_run(pipeline_run_id: str, status: str = "complete",
+                       total_elapsed_ms: int = 0) -> bool:
+    """Close the pipeline_runs document — set status + completed_at."""
+    try:
+        db = _db()
+        if db is None:
+            return False
+        db.pipeline_runs.update_one(
+            {"pipeline_run_id": pipeline_run_id},
+            {"$set": {
+                "status":          status,
+                "total_elapsed_ms": total_elapsed_ms,
+                "completed_at":    _now().isoformat(),
+                "updated_at":      _now().isoformat(),
+            }},
+        )
+        return True
+    except Exception as exc:
+        logger.warning("close_pipeline_run failed: %s", exc)
+        return False
+
+
+def get_pipeline_run_history(deal_id: str | None = None,
+                              limit: int = 20) -> list[dict]:
+    """Return recent pipeline runs, newest first. Optionally filter by deal_id."""
+    try:
+        db = _db()
+        if db is None:
+            return []
+        query = {"deal_id": deal_id} if deal_id else {}
+        docs = list(
+            db.pipeline_runs.find(query, {"_id": 0})
+            .sort("started_at", -1)
+            .limit(limit)
+        )
+        return docs
+    except Exception as exc:
+        logger.warning("get_pipeline_run_history failed: %s", exc)
+        return []
+
+
 def cache_pipeline_run(pipeline_run_id: str, deal_id: str,
                        workspace_id: str, status: str,
                        stages_completed: list | None = None) -> bool:
@@ -151,4 +249,37 @@ def upsert_workspace(workspace_id: str, project_path: str,
         return True
     except Exception as exc:
         logger.warning("upsert_workspace (mongo) failed: %s", exc)
+        return False
+
+
+def get_document_metadata(deal_id: str | None = None) -> list[dict]:
+    """Return document_index docs for a deal, with agent read badges."""
+    try:
+        db = _db()
+        if db is None:
+            return []
+        query = {"deal_id": deal_id} if deal_id else {}
+        docs = list(db.document_index.find(query, {"_id": 0}).sort("indexed_at", -1))
+        return docs
+    except Exception as exc:
+        logger.warning("get_document_metadata failed: %s", exc)
+        return []
+
+
+def mark_document_read_by_agent(document_id: str, agent_name: str) -> bool:
+    """Record that an agent has read a document (agents_read array)."""
+    try:
+        db = _db()
+        if db is None:
+            return False
+        db.document_index.update_one(
+            {"document_id": document_id},
+            {
+                "$addToSet": {"agents_read": agent_name},
+                "$set": {"updated_at": _now().isoformat()},
+            },
+        )
+        return True
+    except Exception as exc:
+        logger.warning("mark_document_read_by_agent failed: %s", exc)
         return False

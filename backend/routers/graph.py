@@ -54,3 +54,25 @@ def get_industry_node(naics_code: str, request: Request):
     except Exception as exc:
         logger.warning("get_industry_node failed: %s", exc)
         return {"status": "error", "message": str(exc)}
+
+
+@router.get("/enrichment-status")
+def get_enrichment_status(request: Request, deal_id: str | None = None):
+    """
+    Return Phase 10B enrichment status for a deal or all deals.
+    Includes per-pass results (serpapi_news, opencorporates, courtlistener, etc.)
+    and the ENRICHMENT_ENABLED feature flag.
+    """
+    import os
+    enabled = os.getenv("ENRICHMENT_ENABLED", "true").lower() not in ("false", "0", "off")
+    try:
+        from services.enrichment_service import get_enrichment_status
+        status = get_enrichment_status(deal_id)
+    except Exception as exc:
+        logger.warning("get_enrichment_status failed: %s", exc)
+        status = {"error": str(exc)}
+    return {
+        "enrichment_enabled": enabled,
+        "deal_id": deal_id,
+        "status": status,
+    }

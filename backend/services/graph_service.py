@@ -197,3 +197,151 @@ def get_guarantor_network(deal_id: str) -> list[dict]:
         {"deal_id": deal_id}
     )
     return result or []
+
+
+# ---------------------------------------------------------------------------
+# IP2 gate check helpers
+# ---------------------------------------------------------------------------
+
+def get_industry_macro_risk_tier(naics_code: str) -> str | None:
+    """Return the macro_risk_tier for an Industry node, or None if unset/missing."""
+    result = _run(
+        "MATCH (n:Industry {naics_code: $code}) RETURN n.macro_risk_tier AS tier",
+        {"code": naics_code}
+    )
+    if not result:
+        return None
+    return result[0].get("tier")
+
+
+# ---------------------------------------------------------------------------
+# Collateral enrichment — APPRAISED_BY / SUBJECT_TO edges
+# ---------------------------------------------------------------------------
+
+def write_appraised_by_edge(collateral_id: str, appraiser_name: str,
+                             appraisal_date: str | None = None,
+                             appraised_value: float | None = None) -> bool:
+    """Collateral -[:APPRAISED_BY]-> Appraiser"""
+    cypher = """
+    MATCH (c:Collateral {collateral_id: $collateral_id})
+    MERGE (a:Appraiser {appraiser_name: $appraiser_name})
+    MERGE (c)-[r:APPRAISED_BY]->(a)
+    SET r.appraisal_date = $appraisal_date,
+        r.appraised_value = $appraised_value
+    """
+    return _run(cypher, {
+        "collateral_id": collateral_id,
+        "appraiser_name": appraiser_name,
+        "appraisal_date": appraisal_date,
+        "appraised_value": appraised_value,
+    }) is not None
+
+
+def write_subject_to_lien(collateral_id: str, lien_id: str,
+                           lien_type: str = "UCC",
+                           amount: float | None = None,
+                           secured_party: str | None = None) -> bool:
+    """Collateral -[:SUBJECT_TO]-> Lien"""
+    cypher = """
+    MATCH (c:Collateral {collateral_id: $collateral_id})
+    MERGE (l:Lien {lien_id: $lien_id})
+    SET l.lien_type = $lien_type, l.amount = $amount, l.secured_party = $secured_party
+    MERGE (c)-[:SUBJECT_TO]->(l)
+    """
+    return _run(cypher, {
+        "collateral_id": collateral_id,
+        "lien_id": lien_id,
+        "lien_type": lien_type,
+        "amount": amount,
+        "secured_party": secured_party,
+    }) is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 10B — External world enrichment writes
+# ---------------------------------------------------------------------------
+
+def write_legal_action_node(entity_id: str, action_id: str,
+                             case_number: str, case_type: str,
+                             status: str, filed_date: str | None = None,
+                             court: str | None = None,
+                             jurisdiction: str | None = None) -> bool:
+    """Company/Individual -[:SUBJECT_OF]-> LegalAction"""
+    cypher = """
+    MATCH (e {entity_id: $entity_id})
+    MERGE (la:LegalAction {action_id: $action_id})
+    SET la.case_number = $case_number, la.case_type = $case_type,
+        la.status = $status, la.filed_date = $filed_date,
+        la.court = $court, la.jurisdiction = $jurisdiction,
+        la.entity_id = $entity_id
+    MERGE (e)-[:SUBJECT_OF]->(la)
+    """
+    return _run(cypher, {
+        "entity_id": entity_id, "action_id": action_id,
+        "case_number": case_number, "case_type": case_type,
+        "status": status, "filed_date": filed_date,
+        "court": court, "jurisdiction": jurisdiction,
+    }) is not None
+
+
+def write_ucc_filing_node(entity_id: str, filing_id: str,
+                           filing_date: str | None = None,
+                           secured_party: str | None = None,
+                           collateral_description: str | None = None,
+                           state: str | None = None) -> bool:
+    """Company -[:HAS_UCC_FILING]-> UccFiling"""
+    cypher = """
+    MATCH (c:Company {entity_id: $entity_id})
+    MERGE (u:UccFiling {filing_id: $filing_id})
+    SET u.filing_date = $filing_date, u.secured_party = $secured_party,
+        u.collateral_description = $collateral_description, u.state = $state
+    MERGE (c)-[:HAS_UCC_FILING]->(u)
+    """
+    return _run(cypher, {
+        "entity_id": entity_id, "filing_id": filing_id,
+        "filing_date": filing_date, "secured_party": secured_party,
+        "collateral_description": collateral_description, "state": state,
+    }) is not None
+
+
+def write_external_company_node(company_id: str, legal_name: str,
+                                  jurisdiction: str | None = None,
+                                  officers: list | None = None,
+                                  deal_id: str | None = None) -> bool:
+    """Standalone ExternalCompany node — used for OpenCorporates affiliates."""
+    cypher = """
+    MERGE (e:ExternalCompany {company_id: $company_id})
+    SET e.legal_name = $legal_name, e.jurisdiction = $jurisdiction,
+        e.officers = $officers, e.deal_id = $deal_id
+    """
+    return _run(cypher, {
+        "company_id": company_id, "legal_name": legal_name,
+        "jurisdiction": jurisdiction, "officers": officers or [],
+        "deal_id": deal_id,
+    }) is not None
+
+
+def link_company_to_news_article(entity_id: str, article_url: str) -> bool:
+    """Company/Individual -[:MENTIONED_IN]-> NewsArticle"""
+    cypher = """
+    MATCH (e {entity_id: $entity_id})
+    MATCH (a:NewsArticle {url: $url})
+    MERGE (e)-[:MENTIONED_IN]->(a)
+    """
+    return _run(cypher, {"entity_id": entity_id, "url": article_url}) is not None
+
+
+def write_connected_to_edge(entity_id_a: str, entity_id_b: str,
+                             reason: str = "shared_address") -> bool:
+    """Cross-entity insider detection edge: Entity -[:CONNECTED_TO]-> Entity"""
+    cypher = """
+    MATCH (a {entity_id: $entity_id_a})
+    MATCH (b {entity_id: $entity_id_b})
+    MERGE (a)-[r:CONNECTED_TO]->(b)
+    SET r.reason = $reason
+    """
+    return _run(cypher, {
+        "entity_id_a": entity_id_a,
+        "entity_id_b": entity_id_b,
+        "reason": reason,
+    }) is not None

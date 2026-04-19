@@ -178,10 +178,11 @@ def health():
         "storage": storage_status,
         "databases": storage_status,
         "features": {
-            "pipeline_history": storage_status.get("sql", {}).get("connected", False),
-            "graph_enrichment": storage_status.get("neo4j", {}).get("connected", False),
-            "vector_search": True,  # ChromaDB available locally without Docker
-            "projections": True,    # Phase 4B complete
+            "pipeline_history":  storage_status.get("sql", {}).get("connected", False),
+            "graph_enrichment":  storage_status.get("neo4j", {}).get("connected", False),
+            "vector_search":     True,  # ChromaDB available locally without Docker
+            "projections":       True,  # Phase 4B complete
+            "enrichment_enabled": _os.getenv("ENRICHMENT_ENABLED", "true").lower() not in ("false", "0", "off"),
         },
     }
 

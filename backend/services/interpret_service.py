@@ -237,12 +237,12 @@ def generate_template_narrative(result: dict) -> str:
     return "\n".join(lines)
 
 
-def run_neural_slacr_pipeline() -> dict:
+def run_neural_slacr_pipeline(deal_id: str | None = None) -> dict:
     """
     Run the full Neural SLACR inference pipeline synchronously.
 
     Steps:
-      1. Load SLACR/slacr.json dimension scores
+      1. Load SLACR/slacr.json dimension scores (falls back to SQL if absent)
       2. Merge financial ratios from extracted_data.json
       3. Run neural_slacr.run(inputs)
       4. Write SLACR/neural_slacr_output.json
@@ -266,7 +266,24 @@ def run_neural_slacr_pipeline() -> dict:
             if field in inp and inp[field] is not None:
                 inputs[field] = float(inp[field])
     except Exception as e:
-        logger.warning("interpret_service: SLACR/slacr.json not available — using defaults (%s)", e)
+        logger.warning("interpret_service: SLACR/slacr.json not available — trying SQL fallback (%s)", e)
+        # SQL fallback: pull last SHAP/LIME + composite_score from slacr_scores table
+        if deal_id:
+            try:
+                from services import sql_service
+                sql_rec = sql_service.get_slacr_shap_lime(deal_id)
+                if sql_rec and sql_rec.get("shap_values"):
+                    logger.info(
+                        "interpret_service: using SQL SHAP/LIME fallback deal_id=%s", deal_id
+                    )
+                    # SHAP values map feature names → contribution; use as proxy inputs
+                    for feat, val in (sql_rec["shap_values"] or {}).items():
+                        try:
+                            inputs[feat] = float(val)
+                        except (TypeError, ValueError):
+                            pass
+            except Exception as sql_exc:
+                logger.warning("interpret_service: SQL SHAP/LIME fallback failed — %s", sql_exc)
 
     # 2. Merge financial ratios
     parse_financial_ratios(inputs)

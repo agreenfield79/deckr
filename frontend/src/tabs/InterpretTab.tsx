@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Brain, ChevronDown, ChevronRight, Loader2, Printer } from 'lucide-react'
+import { Brain, ChevronDown, ChevronRight, Loader2, Printer, BarChart2, Network } from 'lucide-react'
 import * as interpretApi from '../api/interpret'
 import type { NeuralSlacrOutput } from '../api/interpret'
 import { getFile } from '../api/workspace'
+import { get } from '../api/client'
+import { getCurrentDeal } from '../api/pipelineRuns'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import {
   ShapWaterfallChart,
@@ -17,6 +19,21 @@ import { useProject } from '../context/ProjectContext'
 import type { SlacrOutput } from '../types/slacr'
 
 const NARRATIVE_PATH = 'Agent Notes/neural_slacr.md'
+
+interface RatioRow {
+  fiscal_year: number
+  historical_dscr: number | null
+  leverage_ratio: number | null
+  current_ratio: number | null
+  ebitda_margin: number | null
+  funded_debt_to_ebitda: number | null
+}
+
+interface GraphSummary {
+  node_counts?: Record<string, number>
+  relationship_counts?: Record<string, number>
+  deal_id?: string
+}
 
 /** Convert NeuralSlacrOutput input_values to a minimal SlacrOutput for the radar chart. */
 function toSlacrOutput(data: NeuralSlacrOutput): SlacrOutput {
@@ -57,6 +74,13 @@ export default function InterpretTab() {
   const [loadingInit, setLoadingInit] = useState(true)
   const [overrideOpen, setOverrideOpen] = useState(false)
 
+  // Ratio dashboard state
+  const [ratios, setRatios]           = useState<RatioRow[]>([])
+  const [ratiosOpen, setRatiosOpen]   = useState(true)
+  // Deal graph summary state
+  const [graphSummary, setGraphSummary]   = useState<GraphSummary | null>(null)
+  const [graphOpen, setGraphOpen]         = useState(false)
+
   // -------------------------------------------------------------------------
   // On mount: restore last-run results without re-triggering the model
   // -------------------------------------------------------------------------
@@ -73,6 +97,25 @@ export default function InterpretTab() {
       if (res.content) setNarrative(res.content)
     } catch {
       // narrative not yet generated
+    }
+    // Load SQL ratio dashboard
+    try {
+      const deal = await getCurrentDeal()
+      if (deal.deal_id) {
+        const ratioRes = await get<{ ratios: RatioRow[] }>(`/financials/ratios/${deal.deal_id}`)
+        setRatios(ratioRes.ratios ?? [])
+      }
+    } catch {
+      // Ratios not yet available — not an error
+    }
+    // Load deal graph summary sidecar
+    try {
+      const graphRes = await getFile('Agent Notes/deal_graph_summary.json')
+      if (graphRes.content) {
+        setGraphSummary(JSON.parse(graphRes.content) as GraphSummary)
+      }
+    } catch {
+      // Graph summary not yet generated
     }
     setLoadingInit(false)
   }, [])
@@ -369,6 +412,127 @@ export default function InterpretTab() {
               </div>
             )}
           </div>
+
+          {/* SQL Ratio Dashboard */}
+          <div className="border border-[#e0e0e0] rounded-lg overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-medium text-[#525252] transition-colors"
+              onClick={() => setRatiosOpen(!ratiosOpen)}
+            >
+              <span className="flex items-center gap-2">
+                <BarChart2 size={12} className="text-[#0f62fe]" />
+                SQL Ratio Dashboard
+                {ratios.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#e0e0e0] text-[#525252]">
+                    {ratios.length} year{ratios.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </span>
+              {ratiosOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </button>
+            {ratiosOpen && (
+              <div className="border-t border-[#e0e0e0]">
+                {ratios.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-[#6f6f6f] italic">
+                    No ratios available — run the pipeline to populate SQL financial ratios.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-[#f4f4f4] text-[10px] text-[#525252] uppercase tracking-wider">
+                          <th className="text-left px-3 py-1.5 font-semibold">FY</th>
+                          <th className="text-right px-3 py-1.5 font-semibold">DSCR</th>
+                          <th className="text-right px-3 py-1.5 font-semibold">Leverage</th>
+                          <th className="text-right px-3 py-1.5 font-semibold">Current</th>
+                          <th className="text-right px-3 py-1.5 font-semibold">EBITDA Margin</th>
+                          <th className="text-right px-3 py-1.5 font-semibold">Debt/EBITDA</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ratios.map((r, i) => {
+                          const dscrOk = r.historical_dscr !== null && r.historical_dscr >= 1.25
+                          const levOk  = r.leverage_ratio !== null && r.leverage_ratio <= 5.0
+                          const curOk  = r.current_ratio !== null && r.current_ratio >= 1.0
+                          return (
+                            <tr key={r.fiscal_year} className={`border-t border-[#f4f4f4] ${i % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]'}`}>
+                              <td className="px-3 py-1.5 font-mono font-semibold text-[#161616]">
+                                FY{r.fiscal_year}
+                              </td>
+                              <td className={`px-3 py-1.5 text-right font-mono ${r.historical_dscr === null ? 'text-[#a8a8a8]' : dscrOk ? 'text-[#24a148]' : 'text-[#da1e28]'}`}>
+                                {r.historical_dscr !== null ? r.historical_dscr.toFixed(2) + 'x' : '—'}
+                              </td>
+                              <td className={`px-3 py-1.5 text-right font-mono ${r.leverage_ratio === null ? 'text-[#a8a8a8]' : levOk ? 'text-[#24a148]' : 'text-[#da1e28]'}`}>
+                                {r.leverage_ratio !== null ? r.leverage_ratio.toFixed(2) + 'x' : '—'}
+                              </td>
+                              <td className={`px-3 py-1.5 text-right font-mono ${r.current_ratio === null ? 'text-[#a8a8a8]' : curOk ? 'text-[#24a148]' : 'text-[#da1e28]'}`}>
+                                {r.current_ratio !== null ? r.current_ratio.toFixed(2) + 'x' : '—'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-[#525252]">
+                                {r.ebitda_margin !== null ? (r.ebitda_margin * 100).toFixed(1) + '%' : '—'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-[#525252]">
+                                {r.funded_debt_to_ebitda !== null ? r.funded_debt_to_ebitda.toFixed(2) + 'x' : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    <p className="px-3 py-1.5 text-[10px] text-[#8d8d8d] border-t border-[#f4f4f4]">
+                      Green = covenant pass (DSCR ≥ 1.25x · Leverage ≤ 5.0x · Current ≥ 1.0x) · Source: SQL financial_ratios
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Neo4j Deal Graph Summary */}
+          {graphSummary && (
+            <div className="border border-[#e0e0e0] rounded-lg overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-4 py-2.5 bg-[#f4f4f4] hover:bg-[#e8e8e8] text-xs font-medium text-[#525252] transition-colors"
+                onClick={() => setGraphOpen(!graphOpen)}
+              >
+                <span className="flex items-center gap-2">
+                  <Network size={12} className="text-[#6929c4]" />
+                  Neo4j Deal Graph Summary
+                </span>
+                {graphOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </button>
+              {graphOpen && (
+                <div className="border-t border-[#e0e0e0] px-4 py-3 grid grid-cols-2 gap-4">
+                  {graphSummary.node_counts && Object.keys(graphSummary.node_counts).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-2">Nodes</p>
+                      <div className="space-y-1">
+                        {Object.entries(graphSummary.node_counts).map(([label, count]) => (
+                          <div key={label} className="flex justify-between items-center text-xs">
+                            <span className="font-mono text-[#161616]">{label}</span>
+                            <span className="text-[#525252] font-semibold">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {graphSummary.relationship_counts && Object.keys(graphSummary.relationship_counts).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-2">Relationships</p>
+                      <div className="space-y-1">
+                        {Object.entries(graphSummary.relationship_counts).map(([rel, count]) => (
+                          <div key={rel} className="flex justify-between items-center text-xs">
+                            <span className="font-mono text-[11px] text-[#161616]">{rel}</span>
+                            <span className="text-[#525252] font-semibold">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       </div>
