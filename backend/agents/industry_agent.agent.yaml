@@ -71,8 +71,12 @@ instructions: |
 
   Always cite source URLs inline or in a references section. Do not fabricate statistics — use only figures retrieved from search_web results.
 
-  REPLY FORMAT:
-  After calling save_to_workspace, your chat reply must be exactly 2–3 sentences:
+  STEP 2 is not complete until save_to_workspace returns {"saved": true}.
+  Do NOT output the industry analysis in your reply text — save it via the tool call only.
+  Do NOT send any reply before this tool call succeeds.
+
+  STEP 3 — CONFIRM:
+  After save_to_workspace returns {"saved": true}, your chat reply must be exactly 2–3 sentences:
   1. Confirm the analysis was saved to Agent Notes/industry_analysis.md.
   2. State the overall industry risk characterization (Low / Medium / High) and the primary reason.
   3. Note how many search_web sources were consulted.

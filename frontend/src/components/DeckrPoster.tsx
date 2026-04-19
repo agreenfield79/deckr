@@ -1,4 +1,6 @@
 import MarkdownViewer from '../editor/MarkdownViewer'
+import { DscrProjectionChart, LeverageProjectionChart } from '../charts/ProjectionsChart'
+import type { ProjectionsOutput } from '../api/projections'
 
 // ---------------------------------------------------------------------------
 // DeckrSections — exported so DeckrTab can import and build the typed object.
@@ -13,6 +15,8 @@ export interface DeckrSections {
   abilityToRepay: string       // ## 4. Credit Rationale (legacy: Ability to Repay)
   loanStructure: string        // ## 5. Loan Structure (markdown table: Term | Memo | Proposed)
   biddingInstructions: string  // ## 6. Bidding Instructions (process/contact)
+  projections?: ProjectionsOutput | null  // from GET /api/projections/output — optional
+  projectionsText?: string     // ## 7. Projections prose from deckr.md — optional
   raw: string                  // full original markdown — List View fallback
   hasStructure: boolean        // true when ≥3 named sections parsed
 }
@@ -468,6 +472,48 @@ export default function DeckrPoster({ sections }: Props) {
 
         </div>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Full-width Projections Banner — below 2-col grid, above footer    */}
+      {/* ------------------------------------------------------------------ */}
+      {sections.projections && (
+        <div style={{
+          borderTop: '1px solid #e0e0e0',
+          padding: '8px 12px',
+          printColorAdjust: 'exact',
+          WebkitPrintColorAdjust: 'exact',
+        } as React.CSSProperties}>
+          {/* Banner header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <span style={{
+              fontSize: '8px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: '#ffffff',
+              backgroundColor: '#ff832b',
+              padding: '2px 6px',
+              borderRadius: '2px',
+            }}>
+              3-Year Projections
+            </span>
+            <span style={{ fontSize: '9px', color: '#6f6f6f' }}>
+              Base · Upside · Stress · Covenant thresholds: DSCR ≥ 1.25x, Debt/EBITDA ≤ 4.0x
+            </span>
+          </div>
+          {/* Optional prose from deckr.md Section 7 */}
+          {sections.projectionsText && (
+            <p style={{ fontSize: '9px', color: '#525252', marginBottom: '6px', lineHeight: 1.4 }}>
+              {sections.projectionsText.replace(/###.*\n/g, '').replace(/\*\*/g, '').trim().split('\n')[0]}
+            </p>
+          )}
+          {/* Side-by-side compact charts */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <DscrProjectionChart data={sections.projections} compact />
+            <LeverageProjectionChart data={sections.projections} compact />
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Full-width footer                                                   */}

@@ -7,6 +7,9 @@ import type { ExtractedFinancials } from '../api/financials'
 import type { SlacrOutput } from '../types/slacr'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
+import { DscrProjectionChart, LeverageProjectionChart, RevenueEbitdaProjectionChart } from '../charts/ProjectionsChart'
+import { getProjectionsOutput, type ProjectionsOutput } from '../api/projections'
+import { getCurrentDeal } from '../api/pipelineRuns'
 import { useToast } from '../context/ToastContext'
 
 function parseSections(markdown: string): Record<string, string> {
@@ -31,6 +34,7 @@ export default function FinalTab() {
   const [sections, setSections] = useState<Record<string, string>>({})
   const [slacrData, setSlacrData] = useState<SlacrOutput | null>(null)
   const [financials, setFinancials] = useState<ExtractedFinancials | null>(null)
+  const [projectionsData, setProjectionsData] = useState<ProjectionsOutput | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
@@ -42,6 +46,13 @@ export default function FinalTab() {
         }),
         slacrApi.getScore().then(setSlacrData).catch(() => {}),
         getExtractedFinancials().then(setFinancials).catch(() => {}),
+        getCurrentDeal().then(async (deal) => {
+          if (deal.deal_id) {
+            getProjectionsOutput(deal.deal_id).then((p) => {
+              if (p) setProjectionsData(p)
+            }).catch(() => {})
+          }
+        }).catch(() => {}),
       ])
     } catch {
       toastError('Failed to load final document')
@@ -184,6 +195,14 @@ export default function FinalTab() {
                 )}
                 {(name === 'SLACR Score' || name.includes('SLACR Risk Rating')) && slacrData && (
                   <SlacrRadarChart data={slacrData} />
+                )}
+                {/* Projections section: inject all three projection charts for print */}
+                {(name.includes('Covenant Compliance') || name.includes('Financial Projections')) && (
+                  <>
+                    <DscrProjectionChart data={projectionsData} />
+                    <LeverageProjectionChart data={projectionsData} />
+                    <RevenueEbitdaProjectionChart data={projectionsData} />
+                  </>
                 )}
               </div>
             )

@@ -1,4 +1,4 @@
-spec_version: v1
+﻿spec_version: v1
 kind: native
 name: guarantor_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
@@ -114,10 +114,16 @@ instructions: |
   - Overall Guarantee Strength: Strong / Moderate / Weak
   - Key Risks: [summary of coverage gaps, illiquidity concerns, or adverse background items]
 
-  After saving, your chat reply must be a 2-3 sentence confirmation stating: the number of guarantors analyzed, the blended coverage ratio, and the overall guarantee strength rating.
+  STEP 4 is not complete until save_to_workspace returns {"saved": true}.
+  Do NOT output your guarantor analysis in your reply text -- save it via the tool call only.
+  Do NOT send any reply before this tool call succeeds.
+
+  STEP 5 -- CONFIRM:
+  After save_to_workspace returns {"saved": true}, send a 2-3 sentence confirmation stating: the
+  number of guarantors analyzed, the blended coverage ratio, and the overall guarantee strength rating.
 
   IMPORTANT RULES:
-  - Complete STEP 0 through STEP 4 in order. Do not skip any step.
+  - Complete STEP 0 through STEP 5 in order. Do not skip any step.
   - STEP 4 (save) is mandatory.
   - If no guarantor documents are found, save a note explaining this and recommend uploading personal financial statements for each guarantor.
   - Do not fabricate financial figures or adverse background findings.

@@ -8,6 +8,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
+from fastapi import HTTPException
 from services import agent_registry, event_bus, interpret_service, orchestrate_client, watsonx_client, workspace_service
 from services.extraction_service import get_extracted_text
 
@@ -688,7 +689,32 @@ def run_extraction(session_id: str, thread_id: str | None = None) -> dict:
         "run_extraction: invoking Orchestrate — context=%d chars, docs=%d",
         len(context), len(source_files),
     )
-    result = orchestrate_client.invoke_agent("extraction", orchestrate_messages, session_id, thread_id)
+    # Fix B: catch any Orchestrate failure (timeout, 502, etc.) and write the null
+    # schema so that every downstream agent always finds extracted_data.json in the
+    # workspace.  Without this, a single ReadTimeout voids the entire pipeline run.
+    try:
+        result = orchestrate_client.invoke_agent("extraction", orchestrate_messages, session_id, thread_id)
+    except HTTPException as _orch_exc:
+        logger.warning(
+            "run_extraction: Orchestrate call failed (%s) — writing null schema to prevent cascade",
+            _orch_exc.detail,
+        )
+        _null = dict(_NULL_SCHEMA)
+        _null["metadata"] = {
+            "source_files":   source_files,
+            "missing_fields": ["all — Orchestrate extraction timeout or error"],
+            "extracted_at":   date.today().isoformat(),
+        }
+        _null_text = json.dumps(_null, indent=2)
+        workspace_service.write_file("Financials/extracted_data.json", _null_text)
+        workspace_service.write_file(
+            "Financials/financial_data_summary.md",
+            "## Financial Data Summary\n\nExtraction failed — Orchestrate timeout or connection error. Null schema written.",
+        )
+        _elapsed = int((time.time() - _start) * 1000)
+        event_bus.publish({"type": "agent_done", "agent_name": "extraction",
+                           "elapsed_ms": _elapsed, "session_id": session_id})
+        return {"reply": "Extraction failed — null schema written.", "saved_to": "Financials/extracted_data.json"}
     reply  = result.get("reply") or ""
 
     # --- Parse JSON from response ---
@@ -831,8 +857,9 @@ def _inject_deckr_context() -> str:
     """
     blocks: list[str] = []
     for path, label in [
-        ("Deck/memo.md",                        "CREDIT MEMORANDUM (Deck/memo.md)"),
-        ("Agent Notes/financial_analysis.md",   "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
+        ("Deck/memo.md",                          "CREDIT MEMORANDUM (Deck/memo.md)"),
+        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
+        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY (Financials/projections_summary.md)"),
     ]:
         try:
             content = workspace_service.read_file(path)
@@ -891,8 +918,14 @@ def _inject_financial_context() -> str:
     """
     blocks: list[str] = []
     for path, label in [
-        ("Financials/extracted_data.json", "EXTRACTED FINANCIAL DATA (JSON)"),
-        ("Financials/financial_data_summary.md", "FINANCIAL DATA SUMMARY"),
+        ("Financials/extracted_data.json",         "EXTRACTED FINANCIAL DATA (JSON)"),
+        ("Financials/financial_data_summary.md",   "FINANCIAL DATA SUMMARY"),
+        # Phase 4D Step F: pre-inject projections data so the financial agent
+        # finds the expected "--- PROJECTIONS DATA (JSON) ---" label in context
+        # and executes STEP 3 (Covenant Compliance Projections section).
+        # Files are written by projections_service to Financials/ — not Agent Notes/.
+        ("Financials/projections.json",            "PROJECTIONS DATA (JSON)"),
+        ("Financials/covenant_compliance.json",    "COVENANT COMPLIANCE (JSON)"),
     ]:
         try:
             content = workspace_service.read_file(path)
@@ -1845,6 +1878,50 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                         )
                 except Exception as _neo_exc:
                     logger.warning("IP2 gate[neo4j]: check failed — %s", _neo_exc)
+
+            # ── Run projections after IP2 (parallel complete) — before risk ────
+            # projections_service.run_projections() reads from SQL financial tables
+            # (populated by IP2), extracted_data.json (written at step 1), and
+            # loan_terms.  Running here means the risk agent receives
+            # Financials/projections.json and can factor projected DSCR into SLACR
+            # ability_to_repay scoring.  All downstream agents (interpreter,
+            # packaging, review, deckr) also receive projections data.
+            try:
+                import asyncio as _asyncio_ip2
+                from services import projections_service as _proj_svc_ip2
+                _proj_deal_id_ip2 = _pipeline_state.get("deal_id") or ""
+                if _proj_deal_id_ip2:
+                    _asyncio_ip2.run(_proj_svc_ip2.run_projections(
+                        deal_id         = _proj_deal_id_ip2,
+                        workspace_root  = str(workspace_service._get_root()),
+                        pipeline_run_id = _pipeline_state.get("pipeline_run_id"),
+                    ))
+                    logger.info("IP2.5: projections_service completed deal_id=%s", _proj_deal_id_ip2)
+                else:
+                    logger.warning("IP2.5: projections_service skipped — deal_id not set")
+            except RuntimeError as _proj_re_ip2:
+                logger.warning("IP2.5: projections asyncio.run blocked, retrying in thread: %s", _proj_re_ip2)
+                try:
+                    import asyncio as _ai_ip2
+                    from services import projections_service as _proj_svc2_ip2
+                    _pdeal_ip2 = _pipeline_state.get("deal_id") or ""
+                    _pws_ip2   = str(workspace_service._get_root())
+                    _prid_ip2  = _pipeline_state.get("pipeline_run_id")
+                    def _proj_thread_ip2():
+                        _loop = _ai_ip2.new_event_loop()
+                        _ai_ip2.set_event_loop(_loop)
+                        try:
+                            return _loop.run_until_complete(_proj_svc2_ip2.run_projections(
+                                deal_id=_pdeal_ip2, workspace_root=_pws_ip2, pipeline_run_id=_prid_ip2,
+                            ))
+                        finally:
+                            _loop.close()
+                    concurrent.futures.ThreadPoolExecutor(max_workers=1).submit(_proj_thread_ip2).result(timeout=120)
+                except Exception as _proj_te_ip2:
+                    logger.warning("IP2.5: projections thread fallback failed — %s", _proj_te_ip2)
+            except Exception as _proj_exc_ip2:
+                logger.warning("IP2.5: projections_service failed non-fatally — %s", _proj_exc_ip2)
+
             continue  # skip the single-agent path below
 
         # ── single-agent path: emit done/error event ──────────────────────────

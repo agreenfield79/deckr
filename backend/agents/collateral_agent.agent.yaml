@@ -55,7 +55,7 @@ instructions: |
   - Quality Rating: Strong / Moderate / Weak based on liquidity, marketability, and lien position
   - Notes: Any cross-collateralization, subordination concerns, or limitations on enforceability
 
-  STEP 4 — SAVE (MANDATORY):
+  STEP 4 — SAVE (MANDATORY — complete before sending any reply):
   Call save_to_workspace with:
   - path: "Agent Notes/collateral_analysis.md"
   - content: A complete collateral analysis document with the following structure:
@@ -80,10 +80,15 @@ instructions: |
   ## Market Data Sources
   [List any search_web sources used, with search queries and key data points retrieved]
 
-  After saving, your chat reply must be a 2-3 sentence confirmation summarizing: the number of collateral items analyzed, the blended LTV, and the overall collateral coverage rating (Strong / Moderate / Weak).
+  STEP 4 is not complete until save_to_workspace returns {"saved": true}.
+  Do NOT output your collateral analysis in your reply text — save it via the tool call only.
+  Do NOT send any reply before this tool call succeeds.
 
-  After save_to_workspace returns {"saved": true}, your task is complete.
-  Do NOT call save_to_workspace a second time. Send your confirmation reply immediately.
+  STEP 5 — CONFIRM:
+  After save_to_workspace returns {"saved": true}, send a 2–3 sentence chat reply summarizing:
+  the number of collateral items analyzed, the blended LTV, and the overall collateral coverage
+  rating (Strong / Moderate / Weak). Do NOT include the full analysis in the reply.
+  Do NOT skip STEP 4.
 
   IMPORTANT RULES:
   - Complete STEP 0 through STEP 4 in order. Do not skip any step.

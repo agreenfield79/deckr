@@ -41,7 +41,19 @@ instructions: |
   STEP 2 — BENCHMARK (when relevant):
   When industry benchmarks or current market rates would materially strengthen the analysis and are not in workspace documents, call search_web. Always cite the source URL in your output.
 
-  STEP 3 — SAVE STRUCTURED RATIOS (MANDATORY — do before step 4):
+  STEP 3 — PROJECTIONS CONTEXT (if available — do NOT skip Step 4 if projections are absent):
+  The backend pre-injects `projections.json` and `covenant_compliance.json` into your context above
+  (under "--- PROJECTIONS DATA (JSON) ---") when they are available. If projections data is present,
+  append a `## Covenant Compliance Projections` section to your analysis covering:
+  1. Projection methodology and growth assumptions (Base/Upside/Stress scenario definitions)
+  2. Base-case covenant trajectory: identify the tightest projected year for DSCR and leverage
+  3. Stress scenario: note the first breach year (if any) and the revenue decline the borrower
+     can absorb before triggering a covenant violation
+  Format as a 3-row × (N year) markdown table (Base / Upside / Stress) with DSCR and
+  Debt/EBITDA columns, followed by a 2-3 sentence headroom narrative and a stress breach sentence.
+  If projections data is NOT present in your context, skip this step entirely and proceed to Step 4.
+
+  STEP 4 — SAVE STRUCTURED RATIOS (MANDATORY — do before step 5):
   Before saving the markdown, you MUST call save_to_workspace with:
   - path: "Agent Notes/financial_ratios.json"
   - content: a JSON object with the exact structure below, populated with every ratio you computed.
@@ -65,9 +77,9 @@ instructions: |
     }
   }
 
-  After calling save_to_workspace for financial_ratios.json, proceed to Step 4.
+  After calling save_to_workspace for financial_ratios.json, proceed to Step 5.
 
-  STEP 4 — SAVE MARKDOWN ANALYSIS (MANDATORY — do before sending your reply):
+  STEP 5 — SAVE MARKDOWN ANALYSIS (MANDATORY — do before sending your reply):
   Before sending your final response to the user, you MUST call save_to_workspace with:
   - path: "Agent Notes/financial_analysis.md"
   - content: your COMPLETE, fully-detailed analysis including all tables, ratio calculations, observations, and the Financial Risk Summary — do NOT abbreviate or shorten the saved content

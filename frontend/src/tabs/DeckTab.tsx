@@ -27,6 +27,8 @@ import { useSession } from '../hooks/useSession'
 import { getRatingColor } from '../types/slacr'
 import type { SlacrOutput } from '../types/slacr'
 import { RevenueEbitdaChart, LeverageChart, SlacrRadarChart } from '../charts/FinancialCharts'
+import { DscrProjectionChart, LeverageProjectionChart, RevenueEbitdaProjectionChart } from '../charts/ProjectionsChart'
+import { getProjectionsOutput, type ProjectionsOutput } from '../api/projections'
 
 interface CovenantRow {
   metric: string
@@ -91,6 +93,8 @@ export default function DeckTab() {
   const [runs, setRuns]                 = useState<PipelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [runPickerOpen, setRunPickerOpen] = useState(false)
+  // Projections state
+  const [projectionsData, setProjectionsData] = useState<ProjectionsOutput | null>(null)
 
   const fetchDeck = useCallback(async () => {
     setLoading(true)
@@ -115,6 +119,10 @@ export default function DeckTab() {
                 setSelectedRunId(histRes.runs[0].pipeline_run_id)
               }
             } catch { /* not yet available */ }
+            // Projections
+            getProjectionsOutput(deal.deal_id).then((p) => {
+              if (p) setProjectionsData(p)
+            }).catch(() => {})
           }
         }).catch(() => {}),
       ])
@@ -340,7 +348,7 @@ export default function DeckTab() {
         ref={deckPrintRef}
         aria-hidden="true"
         style={{
-          position: 'absolute',
+          position: 'fixed',   // 'fixed' removes from document flow — prevents body height expansion and scroll freeze
           left: '-9999px',
           top: 0,
           width: '768px',
@@ -380,6 +388,13 @@ export default function DeckTab() {
                 <>
                   <SlacrRadarChart data={slacrData} />
                   <SlacrScorePanel data={slacrData} />
+                </>
+              )}
+              {(name.includes('Covenant Compliance') || name.includes('Financial Projections')) && (
+                <>
+                  <DscrProjectionChart data={projectionsData} />
+                  <LeverageProjectionChart data={projectionsData} />
+                  <RevenueEbitdaProjectionChart data={projectionsData} />
                 </>
               )}
             </div>
@@ -653,6 +668,14 @@ export default function DeckTab() {
                           <>
                             <SlacrRadarChart data={slacrData} />
                             <SlacrScorePanel data={slacrData} />
+                          </>
+                        )}
+                        {/* Projections section: inject all three projection charts */}
+                        {(name.includes('Covenant Compliance') || name.includes('Financial Projections')) && (
+                          <>
+                            <DscrProjectionChart data={projectionsData} />
+                            <LeverageProjectionChart data={projectionsData} />
+                            <RevenueEbitdaProjectionChart data={projectionsData} />
                           </>
                         )}
                       </>

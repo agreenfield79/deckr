@@ -72,6 +72,13 @@ def invoke_agent(
     base_url = _get_base_url()
     url = f"{base_url}/v1/orchestrate/{agent_id}/chat/completions"
 
+    # Fix A: separate connect (15 s) from read timeout (300 s) — the 357 K-char
+    # extraction context can take >120 s for GPT-OSS 120B on a busy IBM Cloud node.
+    # Fix C: retry once on ReadTimeout with a 10 s cool-down before re-raising,
+    # covering transient Orchestrate slowness (e.g. right after agent re-imports).
+    _MAX_ATTEMPTS = 2
+    _RETRY_WAIT_S = 10
+
     try:
         token = _orchestrate_token_cache.get_token()
         headers = {
@@ -85,7 +92,20 @@ def invoke_agent(
         }
 
         t0 = time.time()
-        resp = requests.post(url, json=payload, headers=headers, timeout=120)
+        resp = None
+        for _attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                resp = requests.post(url, json=payload, headers=headers, timeout=(15, 300))
+                break
+            except requests.exceptions.ReadTimeout:
+                if _attempt < _MAX_ATTEMPTS:
+                    logger.info(
+                        "orchestrate.invoke: retry attempt %d agent=%s — ReadTimeout, waiting %ds",
+                        _attempt + 1, agent_name, _RETRY_WAIT_S,
+                    )
+                    time.sleep(_RETRY_WAIT_S)
+                else:
+                    raise
         elapsed_ms = int((time.time() - t0) * 1000)
         resp.raise_for_status()
 

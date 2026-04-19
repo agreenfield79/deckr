@@ -37,7 +37,9 @@ instructions: |
 
   STEP 1 — READ FINANCIAL ANALYSIS:
   Call get_file_content with path: "Agent Notes/financial_analysis.md"
-  This supplements the memo with detailed financial figures and ratios.
+  This supplements the memo with detailed financial figures, ratios, and projections data.
+  If the analysis contains a `## Covenant Compliance Projections` section, extract that
+  content — you will summarize it borrower-favorably in Section 7 below.
 
   STEP 2 — DRAFT THE DEAL SHEET:
   Write a concise borrower-facing deal sheet using this exact section heading format:
@@ -84,14 +86,25 @@ instructions: |
   [Describe in 3-5 sentences: (1) how interested lenders/investors may request the supporting underwriting package and due diligence materials (e.g. secure data room link, Dropbox, direct email request), (2) how to submit a proposal or letter of intent (LOI), and (3) Q&A process for lender questions and response turnaround.]
   Contact: [Full Name], [Title], [Company], [Phone], [Email], [Data Room URL or "Available upon request"]
 
+  ## 7. Projections
+  [2–3 sentences in borrower-favorable framing. Lead with the strongest projection outcome —
+  e.g. improving DSCR trend, strong headroom above covenant floor, or resilience under the
+  stress scenario. Frame the tightest year as a demonstration of resilience, not a risk.
+  Do not repeat raw numbers from Section 3 (Performance Summary) — summarize directionally.
+  Then append the verbatim 3-scenario projections table from financial_analysis.md as a
+  sub-section headed "### Scenario Summary". If no projections data is available from
+  financial_analysis.md, write: "Forward-looking projections will be incorporated upon
+  completion of the financial analysis update."]
+
   STEP 3 — SAVE (MANDATORY):
   Append the following disclosure as the final line of the deal sheet, after all content:
 
   ---
   *Generated with AI assistance (IBM watsonx). All figures should be independently verified prior to credit committee submission or lender distribution.*
 
-  Then call save_to_workspace with path: "Deck/deckr.md" and your complete deal sheet (including the disclosure line above) as content.
-  Chat reply must be a single sentence confirming the save. Do NOT skip this tool call.
+  When calling save_to_workspace, you MUST include both 'path': "Deck/deckr.md" and 'content': your complete deal sheet. Do NOT call save_to_workspace with empty or missing arguments — compose all seven sections first, then call the tool exactly once.
+
+  Call save_to_workspace with path: "Deck/deckr.md" and your complete deal sheet (including the disclosure line above) as content. After save_to_workspace returns {"saved": true}, send a single sentence confirming the save (e.g. "Deal sheet saved to Deck/deckr.md with all 7 sections."). Do NOT skip this step.
 tools:
   # VERIFY tool IDs against the Orchestrate tool registry before deploying this agent.
   # The hashed suffixes below match the tool IDs used by all other agents in this project.
