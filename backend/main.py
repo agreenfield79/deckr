@@ -26,6 +26,7 @@ if not os.getenv("IBMCLOUD_API_KEY"):
     sys.exit(1)
 
 from routers import agent, workspace, forms, upload, deck, deckr, status, risk, tools, interpret
+from routers import financials, graph, projections, schema
 
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
@@ -64,6 +65,20 @@ async def lifespan(app: FastAPI):
     from services.event_bus import set_main_loop
     set_main_loop(asyncio.get_running_loop())
 
+    # ── SQL schema init (D-2: create_all for local SQLite) ──
+    try:
+        from services.sql_service import init_schema as _init_sql
+        _init_sql()
+    except Exception as _exc:
+        logger.warning("SQL schema init failed (non-fatal): %s", _exc)
+
+    # ── Graph schema init (Neo4j constraints/indexes) ──
+    try:
+        from services.graph_service import init_graph_schema
+        init_graph_schema()
+    except Exception as _exc:
+        logger.warning("Graph schema init failed (non-fatal): %s", _exc)
+
     logger.info("Deckr API starting up")
     for key in sorted(_CREDENTIAL_KEYS):
         val = os.getenv(key)
@@ -71,6 +86,18 @@ async def lifespan(app: FastAPI):
     for key in sorted(_FLAG_KEYS):
         logger.info("  %-28s %s", key, os.getenv(key, "false"))
     logger.info("  %-28s %s", "WORKSPACE_ROOT", os.getenv("WORKSPACE_ROOT", "(not set)"))
+    logger.info("  %-28s %s", "STORAGE_BACKEND", os.getenv("STORAGE_BACKEND", "local"))
+    logger.info("  %-28s %s", "DB_URL", os.getenv("DB_URL", "(not set)").split("@")[-1])
+
+    # ── DB connectivity pings (D-3: warn on failure, don't crash) ──
+    try:
+        from services.db_factory import ping_sql, ping_mongo, ping_neo4j
+        logger.info("  %-28s %s", "SQL connected",   "✓" if ping_sql()   else "✗ (degraded)")
+        logger.info("  %-28s %s", "MongoDB connected","✓" if ping_mongo() else "✗ (degraded)")
+        logger.info("  %-28s %s", "Neo4j connected",  "✓" if ping_neo4j() else "✗ (degraded)")
+    except Exception as _exc:
+        logger.warning("DB ping block failed: %s", _exc)
+
     # Log Orchestrate config when active
     use_orchestrate = os.getenv("USE_ORCHESTRATE", "false").lower() == "true"
     if use_orchestrate:
@@ -117,23 +144,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agent.router,     prefix="/api/agent",     tags=["agent"])
-app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
-app.include_router(forms.router,     prefix="/api/forms",     tags=["forms"])
-app.include_router(upload.router,    prefix="/api/upload",    tags=["upload"])
-app.include_router(deck.router,      prefix="/api/deck",      tags=["deck"])
-app.include_router(deckr.router,     prefix="/api/deckr",     tags=["deckr"])
-app.include_router(status.router,    prefix="/api/status",    tags=["status"])
-app.include_router(risk.router,      prefix="/api/risk",      tags=["risk"])
-app.include_router(tools.router,     prefix="/api/tools",     tags=["tools"])
-app.include_router(interpret.router, prefix="/api/interpret", tags=["interpret"])
+app.include_router(agent.router,       prefix="/api/agent",       tags=["agent"])
+app.include_router(workspace.router,   prefix="/api/workspace",   tags=["workspace"])
+app.include_router(forms.router,       prefix="/api/forms",       tags=["forms"])
+app.include_router(upload.router,      prefix="/api/upload",      tags=["upload"])
+app.include_router(deck.router,        prefix="/api/deck",        tags=["deck"])
+app.include_router(deckr.router,       prefix="/api/deckr",       tags=["deckr"])
+app.include_router(status.router,      prefix="/api/status",      tags=["status"])
+app.include_router(risk.router,        prefix="/api/risk",        tags=["risk"])
+app.include_router(tools.router,       prefix="/api/tools",       tags=["tools"])
+app.include_router(interpret.router,   prefix="/api/interpret",   tags=["interpret"])
+app.include_router(financials.router,  prefix="/api/financials",  tags=["financials"])
+app.include_router(graph.router,       prefix="/api/graph",       tags=["graph"])
+app.include_router(projections.router, prefix="/api/projections", tags=["projections"])
+app.include_router(schema.router,      prefix="/api/schema",      tags=["schema"])
 
 
 @app.get("/api/health", tags=["health"])
 def health():
+    import os as _os
+    storage_status: dict = {}
+    try:
+        from services.db_factory import db_health
+        storage_status = db_health()
+    except Exception as _exc:
+        storage_status = {"error": str(_exc)}
+
+    storage_mode = _os.getenv("STORAGE_BACKEND", "local")
     return {
         "status": "ok",
+        "storage_mode": storage_mode,
         "config": _config_status(),
+        "storage": storage_status,
+        "databases": storage_status,
+        "features": {
+            "pipeline_history": storage_status.get("sql", {}).get("connected", False),
+            "graph_enrichment": storage_status.get("neo4j", {}).get("connected", False),
+            "vector_search": True,  # ChromaDB available locally without Docker
+            "projections": True,    # Phase 4B complete
+        },
     }
 
 

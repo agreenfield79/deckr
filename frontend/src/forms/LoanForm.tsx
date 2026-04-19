@@ -76,6 +76,7 @@ export default function LoanForm() {
             onChange={(v) => set('loan_amount', v)}
             placeholder="0.00"
             prefix="$"
+            hint="Enter in whole dollars (e.g. 2500000 for a $2.5M loan)"
           />
           <FormField
             type="select"
@@ -84,6 +85,14 @@ export default function LoanForm() {
             value={form.loan_type}
             onChange={(v) => set('loan_type', v)}
             options={LOAN_TYPE_OPTIONS}
+          />
+          <FormField
+            type="number"
+            label="Interest Rate (%)"
+            value={form.interest_rate}
+            onChange={(v) => set('interest_rate', v)}
+            placeholder="6.75"
+            hint="Annual rate as a percentage (e.g. 6.75)"
           />
           <div className="col-span-2">
             <FormField

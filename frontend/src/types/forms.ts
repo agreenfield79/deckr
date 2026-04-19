@@ -32,6 +32,7 @@ export interface LoanRequest {
   loan_type: string
   loan_purpose: string
   repayment_source: string
+  interest_rate: number | ''
   term_months: number | ''
   amortization_months: number | ''
   collateral_offered: string[]
@@ -56,6 +57,7 @@ export const emptyLoan = (): LoanRequest => ({
   loan_type: '',
   loan_purpose: '',
   repayment_source: '',
+  interest_rate: '',
   term_months: '',
   amortization_months: '',
   collateral_offered: [],

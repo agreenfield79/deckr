@@ -1,0 +1,85 @@
+{
+  "_comment": "extracted_data_v2 — canonical reference schema. All v1 fields preserved. v2 additions marked with [v2]. Backward-compatible.",
+  "_version": "v2",
+
+  "company": "string — legal entity name as it appears in the document header",
+  "document_type": "10-K | Tax Return | Financial Statement | Other",
+  "fiscal_years": ["FY2024", "FY2025"],
+
+  "income_statement": {
+    "revenue":                        { "FY2024": null, "FY2025": null },
+    "gross_profit":                   { "FY2024": null, "FY2025": null },
+    "ebitda":                         { "FY2024": null, "FY2025": null },
+    "operating_income":               { "FY2024": null, "FY2025": null },
+    "net_income":                     { "FY2024": null, "FY2025": null },
+    "interest_expense":               { "FY2024": null, "FY2025": null },
+    "depreciation_amortization":      { "FY2024": null, "FY2025": null },
+    "[v2] cogs_product":              { "FY2024": null, "FY2025": null },
+    "[v2] cogs_services":             { "FY2024": null, "FY2025": null },
+    "[v2] research_and_development":  { "FY2024": null, "FY2025": null },
+    "[v2] selling_general_administrative": { "FY2024": null, "FY2025": null },
+    "[v2] stock_based_compensation":  { "FY2024": null, "FY2025": null },
+    "[v2] restructuring_charges":     { "FY2024": null, "FY2025": null },
+    "[v2] effective_tax_rate":        { "FY2024": null, "FY2025": null }
+  },
+
+  "balance_sheet": {
+    "total_assets":                   { "FY2024": null, "FY2025": null },
+    "total_liabilities":              { "FY2024": null, "FY2025": null },
+    "total_equity":                   { "FY2024": null, "FY2025": null },
+    "cash":                           { "FY2024": null, "FY2025": null },
+    "current_assets":                 { "FY2024": null, "FY2025": null },
+    "current_liabilities":            { "FY2024": null, "FY2025": null },
+    "total_debt":                     { "FY2024": null, "FY2025": null },
+    "long_term_debt":                 { "FY2024": null, "FY2025": null },
+    "[v2] days_sales_outstanding":    { "FY2024": null, "FY2025": null },
+    "[v2] days_inventory_outstanding":{ "FY2024": null, "FY2025": null },
+    "[v2] deferred_revenue":          { "FY2024": null, "FY2025": null },
+    "[v2] accrued_liabilities":       { "FY2024": null, "FY2025": null },
+    "[v2] days_payable_outstanding":  { "FY2024": null, "FY2025": null },
+    "[v2] funded_debt_rate_type":     { "FY2024": null, "FY2025": null },
+    "[v2] weighted_avg_interest_rate":{ "FY2024": null, "FY2025": null },
+    "[v2] debt_maturity_schedule":    { "FY2024": null, "FY2025": null }
+  },
+
+  "cash_flow_statement": {
+    "operating_cash_flow":            { "FY2024": null, "FY2025": null },
+    "capex":                          { "FY2024": null, "FY2025": null },
+    "free_cash_flow":                 { "FY2024": null, "FY2025": null },
+    "[v2] stock_based_compensation":  { "FY2024": null, "FY2025": null },
+    "[v2] maintenance_capex":         { "FY2024": null, "FY2025": null },
+    "[v2] growth_capex":              { "FY2024": null, "FY2025": null },
+    "[v2] working_capital_change_detail": { "FY2024": null, "FY2025": null },
+    "[v2] acquisitions":              { "FY2024": null, "FY2025": null },
+    "[v2] debt_repayment":            { "FY2024": null, "FY2025": null },
+    "[v2] share_repurchases":         { "FY2024": null, "FY2025": null }
+  },
+
+  "[v2] revenue_segments": {
+    "FY2024": [
+      {
+        "segment_name": "string",
+        "segment_revenue": null,
+        "pct_of_total_revenue": null
+      }
+    ]
+  },
+
+  "[v2] management_guidance": {
+    "guidance_period": "FY2025",
+    "next_year_revenue_low": null,
+    "next_year_revenue_mid": null,
+    "next_year_revenue_high": null,
+    "next_year_ebitda_margin": null,
+    "growth_drivers": [],
+    "risk_factors": [],
+    "source_text": null
+  },
+
+  "metadata": {
+    "source_files": [],
+    "missing_fields": [],
+    "extracted_at": "YYYY-MM-DD",
+    "[v2] schema_version": "v2"
+  }
+}

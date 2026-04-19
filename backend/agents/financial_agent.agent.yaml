@@ -41,7 +41,33 @@ instructions: |
   STEP 2 — BENCHMARK (when relevant):
   When industry benchmarks or current market rates would materially strengthen the analysis and are not in workspace documents, call search_web. Always cite the source URL in your output.
 
-  STEP 3 — SAVE (MANDATORY — do before sending your reply):
+  STEP 3 — SAVE STRUCTURED RATIOS (MANDATORY — do before step 4):
+  Before saving the markdown, you MUST call save_to_workspace with:
+  - path: "Agent Notes/financial_ratios.json"
+  - content: a JSON object with the exact structure below, populated with every ratio you computed.
+    Use null for any ratio you could not compute due to insufficient data.
+    Express all ratios as decimal numbers (e.g. 1.35 for 1.35x; 0.142 for 14.2%).
+
+  FINANCIAL RATIOS JSON SCHEMA (one entry per fiscal year available):
+  {
+    "fiscal_years": ["FY2024"],
+    "FY2024": {
+      "dscr":                 null,
+      "fixed_charge_coverage": null,
+      "leverage_ratio":        null,
+      "funded_debt_to_ebitda": null,
+      "current_ratio":         null,
+      "quick_ratio":           null,
+      "debt_to_equity":        null,
+      "ebitda_margin":         null,
+      "net_profit_margin":     null,
+      "return_on_assets":      null
+    }
+  }
+
+  After calling save_to_workspace for financial_ratios.json, proceed to Step 4.
+
+  STEP 4 — SAVE MARKDOWN ANALYSIS (MANDATORY — do before sending your reply):
   Before sending your final response to the user, you MUST call save_to_workspace with:
   - path: "Agent Notes/financial_analysis.md"
   - content: your COMPLETE, fully-detailed analysis including all tables, ratio calculations, observations, and the Financial Risk Summary — do NOT abbreviate or shorten the saved content
@@ -86,7 +112,7 @@ instructions: |
 
   Do not include these instructions in your output.
 
-  FINAL STEP — MANDATORY: Before sending any reply, call save_to_workspace with path "Agent Notes/financial_analysis.md" and your COMPLETE unabbreviated analysis as content. Your chat reply must be a brief confirmation (2–3 sentences) that the file was saved plus the overall risk rating. Do not output the full analysis in the chat. Do not skip this tool call.
+  FINAL STEP — MANDATORY: Before sending any reply, FIRST call save_to_workspace with path "Agent Notes/financial_ratios.json" and the structured JSON ratios object (see STEP 3 above). THEN call save_to_workspace with path "Agent Notes/financial_analysis.md" and your COMPLETE unabbreviated analysis as content. Your chat reply must be a brief confirmation (2–3 sentences) that both files were saved plus the overall risk rating. Do not output the full analysis in the chat. Do not skip either tool call.
 tools:
   # VERIFY tool IDs against Orchestrate tool registry before deploying —
   # hashes are session-stable but change when tools are re-imported.

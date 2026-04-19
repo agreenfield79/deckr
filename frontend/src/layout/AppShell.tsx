@@ -5,6 +5,8 @@ import LeftPane from './LeftPane'
 import CenterPane from './CenterPane'
 import RightPane from './RightPane'
 import { getHealth } from '../api/health'
+import DevModePanel from '../components/DevModePanel'
+import StorageBadge from '../components/StorageBadge'
 
 const LAYOUT_KEY = 'deckr:pane-layout'
 const DEFAULT_LAYOUT: [number, number, number] = [18, 55, 27]
@@ -75,6 +77,9 @@ export default function AppShell() {
   return (
     <div className="flex flex-col h-screen bg-[#f4f4f4] overflow-hidden">
       <Header />
+
+      {/* Dev mode URL override bar — visible only when ?devmode=1 */}
+      <DevModePanel />
 
       {/* Backend offline banner */}
       {backendOffline && (
@@ -183,6 +188,7 @@ function Header() {
 
       <div className="flex items-center gap-2">
         <span className="text-[#8d8d8d] text-xs font-mono">default</span>
+        <StorageBadge />
         <button
           className="ml-3 px-3 py-1 text-xs font-medium text-[#161616] bg-[#f4f4f4] hover:bg-white rounded transition-colors"
           title="Export deck"

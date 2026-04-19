@@ -63,8 +63,8 @@ paths:
                       description: >
                         Relative file path within the workspace, using forward
                         slashes. Examples: "Deck/executive_summary.md",
-                        "Analysis/financial_notes.txt",
-                        "Risk/collateral_memo.md". Existing files are
+                        "Agent Notes/financial_notes.md",
+                        "Agent Notes/collateral_memo.md". Existing files are
                         overwritten; new directories are created automatically.
                     content:
                       type: string
@@ -110,7 +110,7 @@ paths:
                       description: >
                         Relative file path within the workspace, using forward
                         slashes. Examples: "Deck/memo.md",
-                        "Analysis/financial_notes.txt",
+                        "Agent Notes/financial_analysis.md",
                         "SLACR/slacr.json".
       responses:
         "200":
@@ -135,7 +135,8 @@ paths:
         searchable via search_workspace).
 
         Valid source-document upload folders are "Borrower", "Loan Request",
-        "Financials", and "SLACR". DO NOT query "Deck/" or "Agent Notes/" —
+        "Financials", "SLACR", "Collateral", "Guarantors", "Tax Returns", and
+        "Other". DO NOT query "Deck/" or "Agent Notes/" —
         those folders contain agent-generated output, not uploaded source
         documents. Use this tool before attempting to search or read specific
         files to confirm they exist.
@@ -154,7 +155,8 @@ paths:
                       default: Financials
                       description: >
                         Workspace folder name to list. Valid source folders:
-                        "Borrower", "Loan Request", "Financials", "SLACR".
+                        "Borrower", "Loan Request", "Financials", "SLACR",
+                        "Collateral", "Guarantors", "Tax Returns", "Other".
                         DO NOT use "Deck" or "Agent Notes" — those are
                         agent-output folders, not upload targets. Defaults
                         to "Financials" if not provided.
@@ -366,6 +368,228 @@ paths:
       responses:
         "200":
           description: Web search results returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # store_extraction  [IP1]
+  # ---------------------------------------------------------------------------
+  /api/tools/store_extraction:
+    post:
+      operationId: store_extraction
+      summary: Persist extracted financial data to SQL + Neo4j (IP1 gate)
+      description: >
+        Trigger the IP1 persistence gate: read the current extracted_data.json from
+        the workspace Financials/ folder and upsert all normalised financial rows
+        into SQL (income_statements, balance_sheets, cash_flow_statements, etc.)
+        and the anchor nodes into Neo4j. Call this immediately after extraction
+        completes and before downstream agents begin analysis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  properties:
+                    deal_id:
+                      type: string
+                      description: Deal identifier. Auto-generated if omitted.
+                    workspace_id:
+                      type: string
+                      description: Workspace identifier. Resolved from WORKSPACE_ROOT if omitted.
+      responses:
+        "200":
+          description: Seed result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # query_financials  [IP2]
+  # ---------------------------------------------------------------------------
+  /api/tools/query_financials:
+    post:
+      operationId: query_financials
+      summary: Query structured financial statements from SQL
+      description: >
+        Return normalised financial statement rows from SQL for a given deal or
+        entity. Use statement_type to choose which statement to retrieve.
+        Optionally filter by fiscal_year.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - deal_id
+                  properties:
+                    deal_id:
+                      type: string
+                      description: Deal identifier used to resolve the entity.
+                    entity_id:
+                      type: string
+                      description: Entity identifier (overrides deal_id lookup if provided).
+                    statement_type:
+                      type: string
+                      default: income_statement
+                      description: >
+                        One of: income_statement, balance_sheet, cash_flow,
+                        loan_terms, management_guidance.
+                    fiscal_year:
+                      type: integer
+                      description: Optional four-digit year filter (e.g. 2024).
+      responses:
+        "200":
+          description: Array of financial rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # log_pipeline_run  [IP2]
+  # ---------------------------------------------------------------------------
+  /api/tools/log_pipeline_run:
+    post:
+      operationId: log_pipeline_run
+      summary: Insert or update a pipeline run record in SQL
+      description: >
+        Write a pipeline_run record (status, stages_completed, duration) to the
+        pipeline_runs SQL table for audit and history tracking. If the record
+        already exists, it is updated with the provided values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - pipeline_run_id
+                    - deal_id
+                  properties:
+                    pipeline_run_id:
+                      type: string
+                      description: UUID for this pipeline execution.
+                    deal_id:
+                      type: string
+                      description: Deal identifier.
+                    workspace_id:
+                      type: string
+                      description: Workspace identifier. Defaults to "default".
+                    status:
+                      type: string
+                      default: complete
+                      description: One of running, complete, failed, partial.
+                    stages_completed:
+                      type: array
+                      items:
+                        type: string
+                      description: List of agent stage names that completed.
+                    total_duration_seconds:
+                      type: integer
+                      description: Wall-clock seconds for the full pipeline run.
+      responses:
+        "200":
+          description: Log result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # get_entity_graph  [IP3]
+  # ---------------------------------------------------------------------------
+  /api/tools/get_entity_graph:
+    post:
+      operationId: get_entity_graph
+      summary: Return the deal knowledge graph from Neo4j
+      description: >
+        Retrieve all nodes and relationships scoped to a deal_id from the Neo4j
+        deal graph. Returns a JSON object with "nodes" and "relationships" arrays
+        suitable for graph analysis or Cytoscape rendering. Falls back to an empty
+        graph if Neo4j is unavailable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - deal_id
+                  properties:
+                    deal_id:
+                      type: string
+                      description: Deal identifier.
+      responses:
+        "200":
+          description: Graph nodes and relationships
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  # ---------------------------------------------------------------------------
+  # search_documents  [IP3]
+  # ---------------------------------------------------------------------------
+  /api/tools/search_documents:
+    post:
+      operationId: search_documents
+      summary: Vector similarity search across indexed workspace documents
+      description: >
+        Perform ANN similarity search over the workspace document index using the
+        provided natural language query. Returns ranked document chunks with text,
+        metadata, and similarity distance. Falls back to keyword-based workspace
+        search if the embeddings index is unavailable (ENABLE_EMBEDDINGS=false).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inputs:
+                  type: object
+                  required:
+                    - query
+                  properties:
+                    query:
+                      type: string
+                      description: >
+                        Natural language query describing the information needed.
+                        Examples: "EBITDA margin trend over three years",
+                        "debt maturity schedule and funded debt rate".
+                    top_k:
+                      type: integer
+                      default: 5
+                      minimum: 1
+                      maximum: 20
+                      description: Number of top-ranked chunks to return.
+                    folders:
+                      type: array
+                      items:
+                        type: string
+                      description: >
+                        Optional workspace folder filter. Examples: ["Financials"],
+                        ["Financials", "Analysis"]. Omit to search all folders.
+      responses:
+        "200":
+          description: Ranked document chunks
           content:
             application/json:
               schema:

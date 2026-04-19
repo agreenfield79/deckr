@@ -406,33 +406,67 @@ _NULL_SCHEMA: dict = {
     "document_type": None,
     "fiscal_years": [],
     "income_statement": {
-        "revenue":                   {},
-        "gross_profit":              {},
-        "ebitda":                    {},
-        "operating_income":          {},
-        "net_income":                {},
-        "interest_expense":          {},
-        "depreciation_amortization": {},
+        "revenue":                        {},
+        "gross_profit":                   {},
+        "ebitda":                         {},
+        "operating_income":               {},
+        "net_income":                     {},
+        "interest_expense":               {},
+        "depreciation_amortization":      {},
+        "cogs_product":                   {},
+        "cogs_services":                  {},
+        "research_and_development":       {},
+        "selling_general_administrative": {},
+        "stock_based_compensation":       {},
+        "restructuring_charges":          {},
+        "effective_tax_rate":             {},
     },
     "balance_sheet": {
-        "total_assets":        {},
-        "total_liabilities":   {},
-        "total_equity":        {},
-        "cash":                {},
-        "current_assets":      {},
-        "current_liabilities": {},
-        "total_debt":          {},
-        "long_term_debt":      {},
+        "total_assets":                   {},
+        "total_liabilities":              {},
+        "total_equity":                   {},
+        "cash":                           {},
+        "current_assets":                 {},
+        "current_liabilities":            {},
+        "total_debt":                     {},
+        "long_term_debt":                 {},
+        "days_sales_outstanding":         {},
+        "days_inventory_outstanding":     {},
+        "deferred_revenue":               {},
+        "accrued_liabilities":            {},
+        "days_payable_outstanding":       {},
+        "funded_debt_rate_type":          {},
+        "weighted_avg_interest_rate":     {},
+        "debt_maturity_schedule":         {},
     },
     "cash_flow_statement": {
-        "operating_cash_flow": {},
-        "capex":               {},
-        "free_cash_flow":      {},
+        "operating_cash_flow":            {},
+        "capex":                          {},
+        "free_cash_flow":                 {},
+        "stock_based_compensation":       {},
+        "maintenance_capex":              {},
+        "growth_capex":                   {},
+        "working_capital_change_detail":  {},
+        "acquisitions":                   {},
+        "debt_repayment":                 {},
+        "share_repurchases":              {},
+    },
+    "revenue_segments": {},
+    "management_guidance": {
+        "guidance_period": None,
+        "next_year_revenue_low": None,
+        "next_year_revenue_mid": None,
+        "next_year_revenue_high": None,
+        "next_year_ebitda_margin": None,
+        "growth_drivers": [],
+        "risk_factors": [],
+        "source_text": None,
     },
     "metadata": {
         "source_files":   [],
         "missing_fields": ["all — no documents uploaded"],
         "extracted_at":   date.today().isoformat(),
+        "schema_version": "v2",
     },
 }
 
@@ -934,6 +968,235 @@ def _wrap_with_frontmatter(content: str, agent_name: str, output_path: str) -> s
 
 
 # ---------------------------------------------------------------------------
+# Integration Point helpers (IP1 / IP2 / IP3)
+# ---------------------------------------------------------------------------
+
+def _safe_int_local(val) -> int | None:
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fire_ip2_hook(agent_name: str, pipeline_state: dict) -> None:
+    """
+    D-3: dispatch to per-agent IP2 hook. All exceptions logged as warnings — never raises.
+    Each hook is conditional on a structured sidecar file written by the agent.
+    """
+    try:
+        if agent_name == "financial":
+            _ip2_financial(pipeline_state)
+        elif agent_name == "industry":
+            _ip2_industry(pipeline_state)
+        elif agent_name == "collateral":
+            _ip2_collateral(pipeline_state)
+        elif agent_name == "guarantor":
+            _ip2_guarantor(pipeline_state)
+    except Exception as exc:
+        logger.warning("IP2[%s] hook raised unexpectedly: %s", agent_name, exc)
+
+
+def _ip2_financial(pipeline_state: dict) -> None:
+    """
+    D-4: read Agent Notes/financial_ratios.json sidecar written by the financial agent.
+    Skip gracefully if absent — hook becomes fully active once D-4 is deployed.
+    Expected sidecar shape: { "<fiscal_year>": { "dscr": ..., "leverage": ..., ... }, ... }
+    """
+    try:
+        raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
+        ratios: dict = json.loads(raw)
+    except Exception:
+        logger.debug(
+            "IP2[financial]: Agent Notes/financial_ratios.json absent — "
+            "D-4 sidecar not yet written by financial agent; skipping SQL write"
+        )
+        return
+
+    from services import sql_service
+    entity_id = pipeline_state.get("entity_id") or ""
+    pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+    wrote = 0
+    for year_str, year_data in ratios.items():
+        year = _safe_int_local(year_str.replace("FY", "").replace("fy", "")) or _safe_int_local(year_str)
+        if year is None or not isinstance(year_data, dict):
+            continue
+        ok = sql_service.write_financial_ratios(entity_id, pipeline_run_id, year, year_data)
+        if ok:
+            wrote += 1
+    logger.info(
+        "IP2[financial]: wrote %d financial_ratio row(s) entity_id=%s", wrote, entity_id
+    )
+
+
+def _ip2_industry(pipeline_state: dict) -> None:
+    """
+    Update Neo4j Industry node with enrichment properties.
+    Reads Agent Notes/industry_enrichment.json sidecar if available; otherwise
+    the Industry node was already created at IP1 via write_operates_in_relationship
+    and no additional write is needed until the structured sidecar exists.
+    """
+    from services import graph_service
+    try:
+        raw = workspace_service.read_file("Agent Notes/industry_enrichment.json")
+        enrichment: dict = json.loads(raw)
+        naics_code = enrichment.get("naics_code") or pipeline_state.get("naics_code")
+        if naics_code:
+            graph_service.write_industry_enrichment(
+                naics_code=naics_code,
+                macro_risk_tier=enrichment.get("macro_risk_tier"),
+                geopolitical_risk_tier=enrichment.get("geopolitical_risk_tier"),
+                geopolitical_risk_factors=enrichment.get("geopolitical_risk_factors"),
+            )
+            logger.info("IP2[industry]: Industry node enriched naics_code=%s", naics_code)
+    except Exception:
+        logger.debug(
+            "IP2[industry]: Agent Notes/industry_enrichment.json absent — "
+            "Industry node already seeded at IP1; no enrichment update"
+        )
+
+
+def _ip2_collateral(pipeline_state: dict) -> None:
+    """
+    Update Neo4j Collateral node with appraiser findings.
+    Reads Agent Notes/collateral_enrichment.json sidecar if available; otherwise
+    the Collateral node was already seeded from extracted_data.json at IP1.
+    """
+    from services import graph_service
+    try:
+        raw = workspace_service.read_file("Agent Notes/collateral_enrichment.json")
+        enrichment: dict = json.loads(raw)
+        graph_service.write_collateral_node(
+            deal_id=pipeline_state.get("deal_id") or "",
+            collateral_id=enrichment.get("collateral_id", ""),
+            collateral_type=enrichment.get("collateral_type", "unknown"),
+            appraised_value=enrichment.get("appraised_value"),
+        )
+        logger.info("IP2[collateral]: Collateral node updated from sidecar")
+    except Exception:
+        logger.debug(
+            "IP2[collateral]: Agent Notes/collateral_enrichment.json absent — "
+            "Collateral node already seeded at IP1; no update"
+        )
+
+
+def _ip2_guarantor(pipeline_state: dict) -> None:
+    """
+    Write GUARANTEES edges in Neo4j.
+    Guarantor Individual nodes were created at IP1. The GUARANTEES relationship
+    requires individual entity_ids + loan_terms_id; these are queried from SQL
+    via the deal_id so no additional sidecar is needed.
+    """
+    from services import graph_service
+    deal_id = pipeline_state.get("deal_id") or ""
+    loan_terms_id = pipeline_state.get("loan_terms_id") or ""
+    if not deal_id or not loan_terms_id:
+        logger.debug(
+            "IP2[guarantor]: deal_id or loan_terms_id missing in pipeline_state — "
+            "GUARANTEES edges deferred"
+        )
+        return
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Entity
+        with next(get_sql_session()) as session:
+            rows = session.query(Entity).filter_by(
+                deal_id=deal_id, entity_type="guarantor_individual"
+            ).all()
+        for row in rows:
+            graph_service.write_guarantees_relationship(
+                entity_id=str(row.entity_id),
+                loan_terms_id=loan_terms_id,
+            )
+        if rows:
+            logger.info(
+                "IP2[guarantor]: wrote %d GUARANTEES edge(s) deal_id=%s", len(rows), deal_id
+            )
+    except Exception as exc:
+        logger.warning("IP2[guarantor]: GUARANTEES edge write failed — %s", exc)
+
+
+def _fire_ip3_hook(pipeline_state: dict) -> None:
+    """
+    IP3: read SLACR/slacr.json after the risk agent completes.
+    Applies OCC mapping deterministically (never by the LLM) and writes slacr_scores.
+    Also reads SLACR/neural_slacr_output.json for SHAP/LIME if available.
+    D-3: all exceptions logged as warnings — never raises.
+    """
+    try:
+        raw = workspace_service.read_file("SLACR/slacr.json")
+        slacr: dict = json.loads(raw)
+    except Exception as exc:
+        logger.warning("IP3: SLACR/slacr.json not found or not parseable — %s", exc)
+        return
+
+    try:
+        from services import sql_service
+
+        deal_id = pipeline_state.get("deal_id") or ""
+        pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+        internal_rating = (
+            slacr.get("rating") or slacr.get("internal_rating") or ""
+        )
+
+        shap_values: dict | None = None
+        lime_values: dict | None = None
+        try:
+            ns_raw = workspace_service.read_file("SLACR/neural_slacr_output.json")
+            ns: dict = json.loads(ns_raw)
+            shap_values = ns.get("shap_values")
+            lime_values = ns.get("lime_values")
+        except Exception:
+            pass
+
+        # Pull DSCR from financial_ratios.json sidecar for OCC band tightening
+        dscr: float | None = None
+        try:
+            fr_raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
+            fr: dict = json.loads(fr_raw)
+            for year_data in fr.values():
+                if isinstance(year_data, dict) and "dscr" in year_data:
+                    try:
+                        dscr = float(year_data["dscr"])
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+
+        # Map slacr.json fields → SlacrScore ORM column names.
+        # slacr.json is a SlacrOutput model dump: top-level has weighted_score,
+        # rating, decision; dimension scores live under the "input" sub-dict.
+        inp = slacr.get("input") or slacr
+        scores = {
+            "sponsor_score":       inp.get("strength"),
+            "leverage_score":      inp.get("leverage"),
+            "asset_quality_score": inp.get("collateral"),
+            "cash_flow_score":     inp.get("ability_to_repay"),
+            "risk_score":          inp.get("risk_factors"),
+            "composite_score":     slacr.get("weighted_score") or slacr.get("score"),
+        }
+        scores = {k: float(v) for k, v in scores.items() if v is not None}
+
+        ok = sql_service.write_slacr_score(
+            deal_id=deal_id,
+            pipeline_run_id=pipeline_run_id,
+            scores=scores,
+            internal_rating=internal_rating,
+            dscr=dscr,
+            shap_values=shap_values,
+            lime_values=lime_values,
+        )
+        if ok:
+            logger.info(
+                "IP3: slacr_scores written deal_id=%s internal_rating=%s",
+                deal_id, internal_rating,
+            )
+        else:
+            logger.warning("IP3: write_slacr_score returned False for deal_id=%s", deal_id)
+    except Exception as exc:
+        logger.warning("IP3: hook failed — %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Pipeline runner — Step 13.1
 # ---------------------------------------------------------------------------
 
@@ -1060,6 +1323,10 @@ def run_pipeline_stream(session_id: str, message: str = ""):
     # Fresh thread ID per pipeline run prevents Orchestrate server-side thread
     # accumulation across multiple runs sharing the same user session ID.
     pipeline_thread_id = str(uuid.uuid4())
+
+    # Carries IP1 seed result through to IP2/IP3 hooks.
+    # Populated after extraction succeeds; read by parallel + risk stage hooks.
+    _pipeline_state: dict = {"pipeline_run_id": str(uuid.uuid4())}
 
     yield json.dumps({"type": "pipeline_start", "total": total}) + "\n"
     logger.info(
@@ -1218,6 +1485,14 @@ def run_pipeline_stream(session_id: str, message: str = ""):
 
             executor.shutdown(wait=False)
 
+            # ── IP2 persistence hooks (fail-silent per D-3) ──────────────────
+            # Fire after collecting all parallel results; skip if IP1 did not seed
+            if _pipeline_state.get("deal_id"):
+                for _pname in stage:
+                    _pr_exc, _ = results_map[_pname]
+                    if not isinstance(_pr_exc, Exception):
+                        _fire_ip2_hook(_pname, _pipeline_state)
+
             # Yield events for all agents in stage order for consistent UI rendering
             for agent_name in stage:
                 result_or_exc, elapsed = results_map[agent_name]
@@ -1285,6 +1560,60 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 "elapsed_ms":   elapsed,
                 "reply_preview": reply_preview,
             }) + "\n"
+
+            # ── IP1: seed SQL + Neo4j after extraction ────────────────────────
+            if agent_name_out == "extraction":
+                try:
+                    from services import extraction_persistence_service
+                    _ws_root = str(workspace_service._get_root())
+                    _seed = extraction_persistence_service.seed(
+                        workspace_root=_ws_root,
+                        deal_id=None,
+                        workspace_id=None,
+                    )
+                    _pipeline_state.update({
+                        "deal_id":       _seed.deal_id,
+                        "entity_id":     _seed.entity_id,
+                        "workspace_id":  _seed.workspace_id,
+                    })
+                    logger.info(
+                        "IP1 gate passed: sql_rows=%d neo4j_nodes=%d deal_id=%s session=%s",
+                        _seed.sql_row_count, _seed.neo4j_nodes_created,
+                        _seed.deal_id, session_id,
+                    )
+                    # Register pipeline run row now that we have a deal_id
+                    try:
+                        from services import sql_service as _sql
+                        _sql.insert_pipeline_run(
+                            _pipeline_state["pipeline_run_id"],
+                            _seed.deal_id or "",
+                            _seed.workspace_id or "",
+                        )
+                    except Exception as _pr_exc:
+                        logger.warning("IP1: insert_pipeline_run failed — %s", _pr_exc)
+                    yield json.dumps({
+                        "type":          "ip1_seeded",
+                        "deal_id":       _seed.deal_id,
+                        "sql_row_count": _seed.sql_row_count,
+                    }) + "\n"
+                except extraction_persistence_service.ExtractionSeedError as _e:
+                    logger.error("IP1 gate FAILED session=%s — %s", session_id, _e)
+                    yield json.dumps({
+                        "type":       "step_error",
+                        "agent":      "ip1_gate",
+                        "step":       sn,
+                        "error":      str(_e),
+                        "elapsed_ms": 0,
+                    }) + "\n"
+                    steps_failed += 1
+                    return  # halt the generator — parallel stage must not start
+                except Exception as _e:
+                    # Infrastructure issue — warn but do not halt (D-3)
+                    logger.warning("IP1 seed failed non-fatally session=%s — %s", session_id, _e)
+
+            # ── IP3: persist SLACR scores + OCC mapping after risk ────────────
+            elif agent_name_out == "risk":
+                _fire_ip3_hook(_pipeline_state)
 
     total_elapsed = int((time.time() - pipeline_start) * 1000)
     logger.info(

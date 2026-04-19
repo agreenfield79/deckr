@@ -21,3 +21,16 @@ scikit-learn     # RandomForestClassifier, MLPClassifier
 numpy            # array math, correlation matrix
 shap             # TreeExplainer for SHAP waterfall values
 lime             # LimeTabularExplainer for local linear approximation
+
+# Phase 4 — Database layer (D-1: SQLite default; PostgreSQL requires Docker)
+sqlalchemy>=2.0          # ORM + session factory; create_all() for local SQLite
+psycopg2-binary          # PostgreSQL driver (needed when DB_URL=postgresql://...)
+pgvector                 # vector column type for SQLAlchemy (PostgreSQL only)
+alembic                  # SQL schema migrations (cloud/Docker path; not required for SQLite)
+pymongo                  # MongoDB driver (local + Atlas)
+google-cloud-firestore   # cloud Firestore (cloud mode only)
+networkx                 # in-memory graph (zero-infra fallback; not currently wired)
+neo4j                    # Bolt driver — local Neo4j and AuraDB
+chromadb                 # local vector store (auto-creates data/.chroma/ on first write)
+httpx                    # async HTTP client (SerpAPI, OpenCorporates, CourtListener — Phase 10B)
+tenacity                 # retry/backoff for transient SQL connection failures (P-3)

@@ -30,6 +30,23 @@ instructions: |
   - Extract the three most recent fiscal years available. If fewer than three years are present, populate only the years found.
   - If multiple documents cover the same fiscal year, prefer audited financial statements over tax returns over management accounts.
   - Populate missing_fields with the field path of every null entry (e.g., "income_statement.ebitda.FY2024").
+  - UNIT NORMALIZATION — MANDATORY: Always express every monetary figure as a whole-dollar integer. If the document or a footnote states "amounts in thousands," multiply every figure in that statement by 1,000 before outputting. If "amounts in millions" or "in millions," multiply by 1,000,000. If "amounts in billions," multiply by 1,000,000,000. Never output a figure in the scale the filing uses — always convert to absolute dollars. If the reporting scale is ambiguous or unstated and the figures are implausibly small for the company size described, note the assumed scale in missing_fields (e.g., "assumed_scale: millions").
+
+  PASS 1 — FINANCIAL STATEMENTS (income statement, balance sheet, cash flow):
+  Extract the three most recent fiscal years. All monetary figures in whole dollars (see UNIT NORMALIZATION above).
+
+  PASS 2 — MD&A, FOOTNOTES, AND SEGMENT DATA (extract after completing Pass 1):
+  Read the Management Discussion & Analysis section, earnings release, and footnotes for:
+    revenue_segments: For each fiscal year, identify separately reported revenue segments or product lines.
+      Extract segment name, segment revenue (whole dollars), and compute pct_of_total_revenue.
+      If no segments are disclosed, set revenue_segments to {}.
+    management_guidance: From forward-looking statements in MD&A or earnings guidance:
+      - next_year_revenue_low, next_year_revenue_mid, next_year_revenue_high: revenue outlook range (whole dollars)
+      - next_year_ebitda_margin: forward EBITDA margin guidance (decimal, e.g. 0.28 for 28%)
+      - growth_drivers: list of quoted or paraphrased growth driver statements (max 5 items)
+      - risk_factors: list of quoted or paraphrased risk factor statements (max 5 items)
+      - source_text: the exact paragraph or sentence from which guidance was drawn (≤500 chars)
+      If no forward guidance is found, set all management_guidance fields to null and empty lists.
 
   FIELD-LEVEL EXTRACTION GUIDANCE:
 
@@ -110,33 +127,71 @@ instructions: |
     "document_type": "10-K | Tax Return | Financial Statement | Other",
     "fiscal_years": ["FY2024", "FY2025"],
     "income_statement": {
-      "revenue":                   { "FY2024": null, "FY2025": null },
-      "gross_profit":              { "FY2024": null, "FY2025": null },
-      "ebitda":                    { "FY2024": null, "FY2025": null },
-      "operating_income":          { "FY2024": null, "FY2025": null },
-      "net_income":                { "FY2024": null, "FY2025": null },
-      "interest_expense":          { "FY2024": null, "FY2025": null },
-      "depreciation_amortization": { "FY2024": null, "FY2025": null }
+      "revenue":                        { "FY2024": null, "FY2025": null },
+      "gross_profit":                   { "FY2024": null, "FY2025": null },
+      "ebitda":                         { "FY2024": null, "FY2025": null },
+      "operating_income":               { "FY2024": null, "FY2025": null },
+      "net_income":                     { "FY2024": null, "FY2025": null },
+      "interest_expense":               { "FY2024": null, "FY2025": null },
+      "depreciation_amortization":      { "FY2024": null, "FY2025": null },
+      "cogs_product":                   { "FY2024": null, "FY2025": null },
+      "cogs_services":                  { "FY2024": null, "FY2025": null },
+      "research_and_development":       { "FY2024": null, "FY2025": null },
+      "selling_general_administrative": { "FY2024": null, "FY2025": null },
+      "stock_based_compensation":       { "FY2024": null, "FY2025": null },
+      "restructuring_charges":          { "FY2024": null, "FY2025": null },
+      "effective_tax_rate":             { "FY2024": null, "FY2025": null }
     },
     "balance_sheet": {
-      "total_assets":        { "FY2024": null, "FY2025": null },
-      "total_liabilities":   { "FY2024": null, "FY2025": null },
-      "total_equity":        { "FY2024": null, "FY2025": null },
-      "cash":                { "FY2024": null, "FY2025": null },
-      "current_assets":      { "FY2024": null, "FY2025": null },
-      "current_liabilities": { "FY2024": null, "FY2025": null },
-      "total_debt":          { "FY2024": null, "FY2025": null },
-      "long_term_debt":      { "FY2024": null, "FY2025": null }
+      "total_assets":                   { "FY2024": null, "FY2025": null },
+      "total_liabilities":              { "FY2024": null, "FY2025": null },
+      "total_equity":                   { "FY2024": null, "FY2025": null },
+      "cash":                           { "FY2024": null, "FY2025": null },
+      "current_assets":                 { "FY2024": null, "FY2025": null },
+      "current_liabilities":            { "FY2024": null, "FY2025": null },
+      "total_debt":                     { "FY2024": null, "FY2025": null },
+      "long_term_debt":                 { "FY2024": null, "FY2025": null },
+      "days_sales_outstanding":         { "FY2024": null, "FY2025": null },
+      "days_inventory_outstanding":     { "FY2024": null, "FY2025": null },
+      "deferred_revenue":               { "FY2024": null, "FY2025": null },
+      "accrued_liabilities":            { "FY2024": null, "FY2025": null },
+      "days_payable_outstanding":       { "FY2024": null, "FY2025": null },
+      "funded_debt_rate_type":          { "FY2024": null, "FY2025": null },
+      "weighted_avg_interest_rate":     { "FY2024": null, "FY2025": null },
+      "debt_maturity_schedule":         { "FY2024": null, "FY2025": null }
     },
     "cash_flow_statement": {
-      "operating_cash_flow": { "FY2024": null, "FY2025": null },
-      "capex":               { "FY2024": null, "FY2025": null },
-      "free_cash_flow":      { "FY2024": null, "FY2025": null }
+      "operating_cash_flow":            { "FY2024": null, "FY2025": null },
+      "capex":                          { "FY2024": null, "FY2025": null },
+      "free_cash_flow":                 { "FY2024": null, "FY2025": null },
+      "stock_based_compensation":       { "FY2024": null, "FY2025": null },
+      "maintenance_capex":              { "FY2024": null, "FY2025": null },
+      "growth_capex":                   { "FY2024": null, "FY2025": null },
+      "working_capital_change_detail":  { "FY2024": null, "FY2025": null },
+      "acquisitions":                   { "FY2024": null, "FY2025": null },
+      "debt_repayment":                 { "FY2024": null, "FY2025": null },
+      "share_repurchases":              { "FY2024": null, "FY2025": null }
+    },
+    "revenue_segments": {
+      "FY2024": [
+        { "segment_name": "string", "segment_revenue": null, "pct_of_total_revenue": null }
+      ]
+    },
+    "management_guidance": {
+      "guidance_period": "FY2025",
+      "next_year_revenue_low":    null,
+      "next_year_revenue_mid":    null,
+      "next_year_revenue_high":   null,
+      "next_year_ebitda_margin":  null,
+      "growth_drivers":           [],
+      "risk_factors":             [],
+      "source_text":              null
     },
     "metadata": {
       "source_files": [],
       "missing_fields": [],
-      "extracted_at": "YYYY-MM-DD"
+      "extracted_at": "YYYY-MM-DD",
+      "schema_version": "v2"
     }
   }
 

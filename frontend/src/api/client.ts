@@ -10,11 +10,24 @@ export class ApiError extends Error {
   }
 }
 
+// Module-level base URL — updated at runtime by ApiContext when the user
+// switches environments or uses DevModePanel (?devmode=1).
+let _baseUrl: string = (import.meta.env.VITE_API_BASE_URL as string) || ''
+
+export function setApiBaseUrl(url: string) {
+  _baseUrl = url
+}
+
+export function getApiBaseUrl(): string {
+  return _baseUrl
+}
+
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const url = path.startsWith('/api') ? path : `/api${path}`
+  const apiPath = path.startsWith('/api') ? path : `/api${path}`
+  const url = _baseUrl ? `${_baseUrl}${apiPath}` : apiPath
 
   const response = await fetch(url, {
     headers: {

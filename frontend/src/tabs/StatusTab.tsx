@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { CheckCircle, Clock, ArrowRight, RefreshCw, Printer } from 'lucide-react'
+import { CheckCircle, Clock, ArrowRight, RefreshCw, Printer, Server, Database, Cpu } from 'lucide-react'
 import { useStatus } from '../hooks/useStatus'
 import { getDeck } from '../api/deck'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TabId } from './TabBar'
+import { useConfig } from '../context/ConfigContext'
 
 function parseSections(markdown: string): Record<string, string> {
   const sections: Record<string, string> = {}
@@ -29,6 +30,7 @@ function motivate(percentage: number): string {
 
 export default function StatusTab({ onNavigate }: StatusTabProps) {
   const { items, percentage, loading, refresh } = useStatus()
+  const { health, healthLoading, refreshHealth } = useConfig()
 
   const [printContent, setPrintContent] = useState<string>('')
   const [printing, setPrinting] = useState(false)
@@ -253,6 +255,126 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
           </div>
         ))}
       </div>
+
+      {/* System Health */}
+      <SystemHealthPanel health={health} loading={healthLoading} onRefresh={refreshHealth} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SystemHealthPanel — shows /api/health response
+// ---------------------------------------------------------------------------
+
+interface SystemHealthPanelProps {
+  health: import('../api/health').HealthResponse | null
+  loading: boolean
+  onRefresh: () => void
+}
+
+function SystemHealthPanel({ health, loading, onRefresh }: SystemHealthPanelProps) {
+  const [expanded, setExpanded] = useState(false)
+
+  const storageMode = health?.storage_mode ?? 'unknown'
+  const features = health?.features
+  const databases = health?.databases ?? health?.storage
+
+  return (
+    <div className="mt-6 border border-[#e0e0e0] rounded bg-white overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="flex items-center gap-2">
+          <Server size={13} className="text-[#525252]" />
+          System Health
+          {health && (
+            <span className={`ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
+              health.status === 'ok' ? 'bg-[#defbe6] text-[#198038]' : 'bg-[#fff1f1] text-[#da1e28]'
+            }`}>
+              {health.status === 'ok' ? 'OK' : 'Degraded'}
+            </span>
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onRefresh() }}
+            disabled={loading}
+            title="Refresh health"
+            className="p-1 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] rounded transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3 text-xs">
+          {/* Storage mode */}
+          <div className="flex items-center gap-2 pt-1">
+            <Database size={12} className="text-[#525252] shrink-0" />
+            <span className="text-[#6f6f6f]">Storage:</span>
+            <span className="font-medium text-[#161616] capitalize">{storageMode}</span>
+          </div>
+
+          {/* Database status */}
+          {databases && (
+            <div>
+              <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
+                Databases
+              </p>
+              <div className="space-y-1">
+                {Object.entries(databases).map(([db, status]) => {
+                  const connected = typeof status === 'object' && status !== null
+                    ? (status as { connected?: boolean }).connected
+                    : false
+                  return (
+                    <div key={db} className="flex items-center justify-between px-2.5 py-1.5 bg-[#f4f4f4] rounded">
+                      <span className="font-mono text-[11px] text-[#161616]">{db}</span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                        connected ? 'bg-[#defbe6] text-[#198038]' : 'bg-[#e8e8e8] text-[#6f6f6f]'
+                      }`}>
+                        {connected ? 'Connected' : 'Offline'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Feature flags */}
+          {features && (
+            <div>
+              <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
+                Features
+              </p>
+              <div className="space-y-1">
+                {Object.entries(features).map(([feat, enabled]) => (
+                  <div key={feat} className="flex items-center justify-between px-2.5 py-1.5 bg-[#f4f4f4] rounded">
+                    <span className="flex items-center gap-1.5">
+                      <Cpu size={10} className="text-[#8d8d8d]" />
+                      <span className="text-[11px] text-[#161616]">
+                        {feat.replace(/_/g, ' ')}
+                      </span>
+                    </span>
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      enabled ? 'bg-[#defbe6] text-[#198038]' : 'bg-[#e8e8e8] text-[#6f6f6f]'
+                    }`}>
+                      {enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!health && !loading && (
+            <p className="text-[#6f6f6f] italic">Backend unavailable — health data not loaded.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -118,14 +118,6 @@ instructions: |
 
   Do not include these instructions in your output.
 tools:
-  # ---------------------------------------------------------------------------
-  # !! ACTION REQUIRED BEFORE RE-DEPLOYING !!
-  # The compute_slacr_score tool ID below contains a placeholder hash (XXXX).
-  # You MUST replace it with the actual hash from the Orchestrate tool registry:
-  #   Orchestrate UI → Tools → compute_slacr_score → copy the full tool ID
-  #   (format: Compute_a_SLACR_risk_rating_fr_6042gWXX)
-  # Deploying with XXXX will break the tool binding and the agent will fail.
-  # ---------------------------------------------------------------------------
   # Other tool IDs are stable across sessions; verify if tools were re-imported.
   - Semantic_search_across_uploade_6607Du
   - Compute_a_SLACR_risk_rating_fr_6042gW
