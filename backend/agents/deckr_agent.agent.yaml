@@ -31,17 +31,13 @@ instructions: |
 
   TOOL USE — REQUIRED (follow these steps in exact order):
 
-  STEP 0 — READ THE CREDIT MEMORANDUM:
-  Call get_file_content with path: "Deck/memo.md"
-  Read the full credit memorandum before proceeding.
+  The Credit Memorandum (Deck/memo.md), Financial Analysis (Agent Notes/financial_analysis.md),
+  and Projections Summary have been pre-loaded into your context above. Begin directly at STEP 1
+  using the figures already provided. Do NOT call get_file_content — those files are already in
+  your context. If the financial analysis contains a "## Covenant Compliance Projections" section,
+  use that content for Section 7 below.
 
-  STEP 1 — READ FINANCIAL ANALYSIS:
-  Call get_file_content with path: "Agent Notes/financial_analysis.md"
-  This supplements the memo with detailed financial figures, ratios, and projections data.
-  If the analysis contains a `## Covenant Compliance Projections` section, extract that
-  content — you will summarize it borrower-favorably in Section 7 below.
-
-  STEP 2 — DRAFT THE DEAL SHEET:
+  STEP 1 — DRAFT THE DEAL SHEET:
   Write a concise borrower-facing deal sheet using this exact section heading format:
 
   ## 1. Header
@@ -96,7 +92,7 @@ instructions: |
   financial_analysis.md, write: "Forward-looking projections will be incorporated upon
   completion of the financial analysis update."]
 
-  STEP 3 — SAVE (MANDATORY):
+  STEP 2 — SAVE (MANDATORY):
   Append the following disclosure as the final line of the deal sheet, after all content:
 
   ---
@@ -106,8 +102,7 @@ instructions: |
 
   Call save_to_workspace with path: "Deck/deckr.md" and your complete deal sheet (including the disclosure line above) as content. After save_to_workspace returns {"saved": true}, send a single sentence confirming the save (e.g. "Deal sheet saved to Deck/deckr.md with all 7 sections."). Do NOT skip this step.
 tools:
-  # VERIFY tool IDs against the Orchestrate tool registry before deploying this agent.
-  # The hashed suffixes below match the tool IDs used by all other agents in this project.
-  - Read_a_workspace_file_and_retu_5053Mg   # get_file_content — STEPS 0, 1
-  - Save_text_content_to_the_borro_4556q1   # save_to_workspace — STEP 3
-  - Semantic_search_across_uploade_6607Du   # search_workspace — supplemental context lookup
+  - get_file_content
+  - save_to_workspace
+  - search_workspace
+  - search_documents

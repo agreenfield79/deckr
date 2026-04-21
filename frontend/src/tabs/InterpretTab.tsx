@@ -22,6 +22,7 @@ import LimeExplanationChart from '../components/LimeExplanationChart'
 import RiskScoreGauge from '../components/RiskScoreGauge'
 import DealGraph from '../components/DealGraph'
 import ExternalNetworkGraph from '../components/ExternalNetworkGraph'
+import AgentWordCloud from '../components/AgentWordCloud'
 import { getFinancialSummary, getShapLime } from '../api/financials'
 import type { FinancialSummaryResponse, ShapLimeResponse } from '../api/financials'
 
@@ -529,6 +530,14 @@ export default function InterpretTab() {
                 <FinancialSummaryGrid data={financialSummary} />
               </div>
             )}
+          </div>
+
+          {/* External Evidence Word Cloud */}
+          <div>
+            <h3 className="text-xs font-semibold text-[#161616] uppercase tracking-wider mb-2">
+              External Evidence Word Cloud
+            </h3>
+            <AgentWordCloud />
           </div>
 
           {/* Deal Structure Graphs */}

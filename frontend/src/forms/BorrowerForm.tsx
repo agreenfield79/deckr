@@ -1,11 +1,36 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plus, Trash2, Upload } from 'lucide-react'
 import FormField from './FormField'
 import { getBorrower, saveBorrower } from '../api/forms'
 import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
 import { emptyBorrower } from '../types/forms'
 import type { BorrowerProfile, OwnershipEntry, ManagementBio } from '../types/forms'
+
+const NVIDIA_BORROWER: BorrowerProfile = {
+  business_name: 'NVIDIA Corporation',
+  entity_type: 'Corp',
+  industry: 'Semiconductors / AI Infrastructure (NAICS 334413)',
+  years_in_business: 32,
+  address: '2788 San Tomas Expressway, Santa Clara, CA 95051',
+  website: 'https://www.nvidia.com',
+  existing_banking_relationship: 'JPMorgan Chase, Wells Fargo, Bank of America',
+  ownership_structure: [
+    { name: 'Jensen Huang', percent: 3.5, role: 'CEO & Co-Founder' },
+    { name: 'Institutional Shareholders', percent: 68, role: 'Institutional' },
+    { name: 'Public Float', percent: 28.5, role: 'Public' },
+  ],
+  management_bios: [
+    {
+      name: 'Jensen Huang — CEO & Co-Founder',
+      bio: 'Co-founder and CEO of NVIDIA since 1993. Pioneered GPU-accelerated computing and led NVIDIA\'s transformation from a graphics chip company into the dominant AI infrastructure platform. Under his leadership, NVIDIA\'s market cap surpassed $3 trillion.',
+    },
+    {
+      name: 'Colette Kress — CFO',
+      bio: 'Executive Vice President and CFO since 2013. Previously held senior finance roles at Cisco Systems and Microsoft. Oversees NVIDIA\'s global financial operations, investor relations, and treasury.',
+    },
+  ],
+}
 
 const ENTITY_OPTIONS = [
   { value: 'LLC', label: 'LLC' },
@@ -27,6 +52,7 @@ export default function BorrowerForm() {
   const [submitting, setSubmitting] = useState(false)
   const { refreshTree } = useProject()
   const toast = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -50,6 +76,28 @@ export default function BorrowerForm() {
 
   const removeBio = (i: number) =>
     set('management_bios', form.management_bios.filter((_, idx) => idx !== i))
+
+  const loadSample = () => {
+    setForm({ ...emptyBorrower(), ...NVIDIA_BORROWER })
+    toast.success('NVIDIA sample data loaded — review and save to confirm')
+  }
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target?.result as string)
+        setForm({ ...emptyBorrower(), ...parsed })
+        toast.success(`Imported from ${file.name}`)
+      } catch {
+        toast.error('Failed to parse JSON — make sure the file is valid borrower profile JSON')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -202,13 +250,37 @@ export default function BorrowerForm() {
       </section>
 
       {/* Submit */}
-      <div className="pt-2">
+      <div className="pt-2 flex items-center gap-3 flex-wrap">
         <button
           type="submit"
           disabled={submitting}
           className="px-5 py-2 bg-[#0f62fe] text-white text-sm font-medium rounded hover:bg-[#0353e9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? 'Saving…' : 'Save Borrower Profile'}
+        </button>
+
+        <button
+          type="button"
+          onClick={loadSample}
+          className="px-4 py-2 bg-white border border-[#0f62fe] text-[#0f62fe] text-sm font-medium rounded hover:bg-[#edf4ff] transition-colors"
+        >
+          Load NVIDIA Sample
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 px-4 py-2 bg-white border border-[#8d8d8d] text-[#525252] text-sm font-medium rounded hover:bg-[#f4f4f4] transition-colors"
+        >
+          <Upload size={14} />
+          Import from JSON
         </button>
       </div>
     </form>

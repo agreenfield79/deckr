@@ -299,7 +299,6 @@ async def _ucc_search_pass(deal_id: str, entities: list[dict], result: dict) -> 
                             entity_id=ent["entity_id"],
                             filing_id=filing_id,
                             secured_party=None,
-                            collateral_description=item.get("snippet", "")[:200],
                             state=state,
                         )
                         filings_found += 1
@@ -321,10 +320,13 @@ async def _opencorporates_pass(deal_id: str, entities: list[dict], result: dict)
     OpenCorporates company lookup — find affiliates, prior names, officers.
     Writes ExternalCompany nodes + AFFILIATED_WITH/FORMERLY_OWNED edges.
     """
+    if not _OPENCORP_KEY:
+        logger.info("[enrichment] OpenCorporates: no API key configured — skipping pass")
+        result["passes"]["opencorporates"] = {"status": "skipped", "reason": "no_api_key"}
+        return
+
     companies_found = 0
-    headers = {}
-    if _OPENCORP_KEY:
-        headers["Authorization"] = f"Token token={_OPENCORP_KEY}"
+    headers = {"Authorization": f"Token token={_OPENCORP_KEY}"}
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
         for ent in entities:
@@ -338,8 +340,8 @@ async def _opencorporates_pass(deal_id: str, entities: list[dict], result: dict)
                     f"{_OPENCORP_BASE}/companies/search",
                     params={"q": name, "per_page": 3},
                 )
-                if resp.status_code == 403:
-                    logger.info("[enrichment] OpenCorporates: API key required for full access")
+                if resp.status_code in (401, 403):
+                    logger.info("[enrichment] OpenCorporates: auth required — skipping")
                     break
                 resp.raise_for_status()
                 data = resp.json()
@@ -379,10 +381,13 @@ async def _courtlistener_pass(deal_id: str, entities: list[dict], result: dict) 
     CourtListener search for civil cases, judgments, and bankruptcies.
     Creates LegalAction nodes + SUBJECT_OF edges.
     """
+    if not _COURT_KEY:
+        logger.info("[enrichment] CourtListener: no API key configured — skipping pass")
+        result["passes"]["courtlistener"] = {"status": "skipped", "reason": "no_api_key"}
+        return
+
     actions_found = 0
-    headers = {"Accept": "application/json"}
-    if _COURT_KEY:
-        headers["Authorization"] = f"Token {_COURT_KEY}"
+    headers = {"Accept": "application/json", "Authorization": f"Token {_COURT_KEY}"}
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
         for ent in entities:

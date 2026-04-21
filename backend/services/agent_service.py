@@ -140,6 +140,20 @@ def run(
                     "agent_service: deckr context pre-injected (%d chars) for agent=%s",
                     len(deckr_ctx), agent_name,
                 )
+        # Packaging agent: pre-inject projections summary, covenant compliance,
+        # industry analysis, and financial analysis so the agent has the data for
+        # sections 8b and 9 without burning its tool-call budget on those lookups.
+        # Without pre-injection both sections render as [DATA MISSING] because the
+        # "3 planning steps" constraint is exhausted by inventory + SLACR retrieval
+        # before the projections and industry queries can execute.
+        elif agent_name == "packaging":
+            pkg_ctx = _inject_packaging_context()
+            if pkg_ctx:
+                parts.append(pkg_ctx)
+                logger.info(
+                    "agent_service: packaging context pre-injected (%d chars) for agent=%s",
+                    len(pkg_ctx), agent_name,
+                )
         # Interpreter agent: pre-inject neural_slacr_output.json so the model
         # does not need get_file_content tool calls.  Its only remaining tool
         # call is save_to_workspace("Agent Notes/neural_slacr.md").
@@ -779,7 +793,9 @@ def _load_context(context_folders: list[str], query: str = "") -> str:
     Falls back to full-file loading when embeddings are disabled or fail.
     """
     # Semantic retrieval path — replaces the 10k-char full-context dump
-    if query and os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true":
+    # Skip embeddings entirely when no context folders are defined; pre-injection
+    # handles context for those agents and embeddings would return irrelevant results.
+    if query and context_folders and os.getenv("ENABLE_EMBEDDINGS", "false").lower() == "true":
         try:
             from services import embeddings_service
             ctx = embeddings_service.get_relevant_context(query, context_folders)
@@ -920,6 +936,11 @@ def _inject_financial_context() -> str:
     for path, label in [
         ("Financials/extracted_data.json",         "EXTRACTED FINANCIAL DATA (JSON)"),
         ("Financials/financial_data_summary.md",   "FINANCIAL DATA SUMMARY"),
+        # loan_terms.json carries proposed_annual_debt_service computed from the
+        # loan form submission (amount + rate + amortization).  Without this the
+        # financial agent cannot compute DSCR because extracted_data.json only
+        # contains the borrower's existing interest expense, not the proposed ADS.
+        ("Financials/loan_terms.json",             "PROPOSED LOAN TERMS (JSON)"),
         # Phase 4D Step F: pre-inject projections data so the financial agent
         # finds the expected "--- PROJECTIONS DATA (JSON) ---" label in context
         # and executes STEP 3 (Covenant Compliance Projections section).
@@ -939,6 +960,45 @@ def _inject_financial_context() -> str:
                 "_inject_financial_context: could not load %s — %s", path, exc
             )
 
+    return "\n\n".join(blocks)
+
+
+def _inject_packaging_context() -> str:
+    """
+    Pre-load the key prior-agent outputs that the packaging agent needs for
+    sections 8b (Financial Projections) and 9 (Industry & Market Analysis).
+
+    Without pre-injection the packaging agent exhausts its 3-step reasoning
+    budget on inventory + SLACR retrieval and never executes the projections or
+    industry search calls, causing both sections to render as [DATA MISSING].
+
+    Files are guaranteed to exist by the time packaging runs:
+      - projections_summary.md / covenant_compliance.json — written by
+        projections_service at IP2.5 (after the financial/industry/collateral/
+        guarantor parallel stage, before the risk stage).
+      - industry_analysis.md — written by the industry agent in the parallel stage.
+      - financial_analysis.md — written by the financial agent in the parallel stage.
+
+    Returns an empty string when files do not yet exist (safe no-op).
+    """
+    blocks: list[str] = []
+    for path, label in [
+        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY (Financials/projections_summary.md)"),
+        ("Financials/covenant_compliance.json",   "COVENANT COMPLIANCE DATA (Financials/covenant_compliance.json)"),
+        ("Agent Notes/industry_analysis.md",      "INDUSTRY ANALYSIS (Agent Notes/industry_analysis.md)"),
+        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
+    ]:
+        try:
+            content = workspace_service.read_file(path)
+            if content and content.strip():
+                blocks.append(f"--- {label} ---\n{content.strip()}")
+                logger.info(
+                    "_inject_packaging_context: loaded %s (%d chars)", path, len(content)
+                )
+        except Exception as exc:
+            logger.debug(
+                "_inject_packaging_context: could not load %s — %s", path, exc
+            )
     return "\n\n".join(blocks)
 
 
@@ -1070,6 +1130,11 @@ def _ip2_financial(pipeline_state: dict) -> None:
     D-4: read Agent Notes/financial_ratios.json sidecar written by the financial agent.
     Skip gracefully if absent — hook becomes fully active once D-4 is deployed.
     Expected sidecar shape: { "<fiscal_year>": { "dscr": ..., "leverage": ..., ... }, ... }
+
+    SQL fallback: for any ratio the agent left as null, compute it directly from
+    income_statements / balance_sheets rows that were already written at IP1.
+    This guarantees ebitda_margin, net_profit_margin, interest_coverage, current_ratio,
+    debt_to_equity, and return_on_assets are populated whenever source data is available.
     """
     try:
         raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
@@ -1081,14 +1146,76 @@ def _ip2_financial(pipeline_state: dict) -> None:
         )
         return
 
-    from services import sql_service
+    # ------------------------------------------------------------------
+    # SQL-backed fallback: load income statement + balance sheet rows
+    # already persisted at IP1 so we can fill null ratio slots.
+    # ------------------------------------------------------------------
     entity_id = pipeline_state.get("entity_id") or ""
+    _inc_by_year: dict[int, Any] = {}
+    _bs_by_year: dict[int, Any] = {}
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import IncomeStatement, BalanceSheet
+        from sqlalchemy import select as _sel
+        with next(get_sql_session()) as _s:
+            for _r in _s.execute(
+                _sel(IncomeStatement).where(IncomeStatement.entity_id == entity_id)
+            ).scalars().all():
+                _inc_by_year[_r.fiscal_year] = _r
+            for _r in _s.execute(
+                _sel(BalanceSheet).where(BalanceSheet.entity_id == entity_id)
+            ).scalars().all():
+                if _r.as_of_date:
+                    _bs_by_year[_r.as_of_date.year] = _r
+    except Exception as _sq_err:
+        logger.debug("IP2[financial]: SQL fallback query failed — %s", _sq_err)
+    # ------------------------------------------------------------------
+
+    from services import sql_service
     pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
     wrote = 0
     for year_str, year_data in ratios.items():
         year = _safe_int_local(year_str.replace("FY", "").replace("fy", "")) or _safe_int_local(year_str)
         if year is None or not isinstance(year_data, dict):
             continue
+
+        # Patch null slots from SQL-computed fallback values
+        _inc = _inc_by_year.get(year)
+        _bs  = _bs_by_year.get(year)
+        if _inc:
+            _rev = float(_inc.revenue or 0)
+            if _rev > 0:
+                if year_data.get("ebitda_margin") is None and _inc.ebitda is not None:
+                    year_data["ebitda_margin"] = round(float(_inc.ebitda) / _rev, 6)
+                if year_data.get("net_profit_margin") is None and _inc.net_income is not None:
+                    year_data["net_profit_margin"] = round(float(_inc.net_income) / _rev, 6)
+            _ie = float(_inc.interest_expense or 0)
+            if _ie != 0 and _inc.ebit is not None:
+                if year_data.get("interest_coverage") is None:
+                    year_data["interest_coverage"] = round(float(_inc.ebit) / _ie, 4)
+        if _bs:
+            _cl = float(_bs.total_current_liabilities or 0)
+            if _cl != 0 and _bs.total_current_assets is not None:
+                if year_data.get("current_ratio") is None:
+                    year_data["current_ratio"] = round(
+                        float(_bs.total_current_assets) / _cl, 4
+                    )
+            _eq = float(_bs.total_equity or 0)
+            if _eq != 0:
+                _debt = float(_bs.long_term_debt or 0) + float(_bs.short_term_debt or 0)
+                if year_data.get("debt_to_equity") is None:
+                    year_data["debt_to_equity"] = round(_debt / _eq, 4)
+            if _inc and _bs.total_assets and float(_bs.total_assets) != 0:
+                if year_data.get("return_on_assets") is None and _inc.net_income is not None:
+                    year_data["return_on_assets"] = round(
+                        float(_inc.net_income) / float(_bs.total_assets), 6
+                    )
+                _rev2 = float(_inc.revenue or 0)
+                if _rev2 > 0 and year_data.get("asset_turnover") is None:
+                    year_data["asset_turnover"] = round(
+                        _rev2 / float(_bs.total_assets), 4
+                    )
+
         ok = sql_service.write_financial_ratios(entity_id, pipeline_run_id, year, year_data)
         if ok:
             wrote += 1
@@ -1234,6 +1361,36 @@ def _ip2_collateral(pipeline_state: dict) -> None:
                 recording_date=lien.get("recording_date"),
             )
             logger.info("IP2[collateral]: SUBJECT_TO lien edge written — %s", lien["lien_id"])
+
+        # 3E.4 / 3E.7 — Wire SECURED_BY and PLEDGES relationships (IP2[collateral])
+        # Collateral data is only available here (not at IP1), so these edges are written now.
+        loan_terms_id = pipeline_state.get("loan_terms_id") or ""
+        entity_id     = pipeline_state.get("entity_id") or ""
+        if not loan_terms_id:
+            try:
+                from services import sql_service as _sql_col
+                lt = _sql_col.get_loan_terms(pipeline_state.get("deal_id") or "")
+                loan_terms_id = (lt or {}).get("loan_terms_id", "")
+            except Exception:
+                pass
+        if loan_terms_id and collateral_id:
+            lien_pos  = enrichment.get("lien_position", 1)
+            lien_type = (enrichment.get("liens") or [{}])[0].get("lien_type", "UCC") \
+                        if enrichment.get("liens") else "UCC"
+            graph_service.write_secured_by_relationship(
+                loan_terms_id=loan_terms_id,
+                collateral_id=collateral_id,
+                lien_position=lien_pos,
+                lien_type=lien_type,
+            )
+            logger.info("IP2[collateral]: SECURED_BY edge written loan_terms_id=%s", loan_terms_id)
+        if entity_id and collateral_id:
+            graph_service.write_pledges_relationship(
+                entity_id=entity_id,
+                collateral_id=collateral_id,
+                pledged_at=None,
+            )
+            logger.info("IP2[collateral]: PLEDGES edge written entity_id=%s", entity_id)
     except Exception:
         logger.debug(
             "IP2[collateral]: Agent Notes/collateral_enrichment.json absent — "
@@ -1517,14 +1674,15 @@ def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
             continue
         pass_fail = (actual_f >= threshold) if operator == "gte" else (actual_f <= threshold)
         ok = sql_service.insert_covenant(deal_id, pipeline_run_id, {
-            "covenant_type":    "financial",
-            "description":      description,
-            "metric":           display_metric,
-            "threshold_value":  threshold,
-            "actual_value":     round(actual_f, 4),
-            "unit":             unit,
-            "pass_fail":        pass_fail,
-            "source_agent":     "risk",
+            "covenant_type":      "financial",
+            "description":        description,
+            "metric":             display_metric,
+            "threshold_value":    threshold,
+            "threshold_operator": operator,
+            "actual_value":       round(actual_f, 4),
+            "unit":               unit,
+            "pass_fail":          pass_fail,
+            "source_agent":       "risk",
         })
         if ok:
             wrote += 1
@@ -1584,9 +1742,14 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "Financials/financial_data_summary.md for use by all downstream analysis agents."
     ),
     "industry": (
-        "Run Industry Analysis Agent — research the borrower's industry using web search and save "
-        "a complete industry and market analysis to Agent Notes/industry_analysis.md for use by "
-        "the Packaging Agent."
+        "Run Industry Analysis Agent — the borrower's industry is identified in the "
+        "Borrower/ folder documents. Research the industry with four separate search_web calls, "
+        "each with a specific query string: "
+        "(1) query = '[industry name] global market size CAGR 2026', "
+        "(2) query = '[industry name] competitive landscape key players market share 2026', "
+        "(3) query = '[industry name] regulatory environment compliance requirements 2026', "
+        "(4) query = '[industry name] key risk factors macro trends outlook 2026'. "
+        "Save a complete industry and market analysis to Agent Notes/industry_analysis.md."
     ),
     "collateral": (
         "Run Collateral Agent — analyze all uploaded collateral documents, calculate LTV and lien "
@@ -1904,6 +2067,24 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                     }) + "\n")
                     _log_stage(_pipeline_state, agent_name, sn, elapsed,
                                result_or_exc.get("saved_to"))
+                    # 3C.6 / 3E.7 — RAG context capture (D-3: fail-silent)
+                    try:
+                        from services import mongo_service as _mongo_rag
+                        import hashlib as _hashlib
+                        _rag_prompt = result_or_exc.get("prompt") or result_or_exc.get("reply") or ""
+                        _rag_hash   = _hashlib.sha256(_rag_prompt.encode()).hexdigest() if _rag_prompt else None
+                        _mongo_rag.save_rag_context(
+                            pipeline_run_id   = _pipeline_state.get("pipeline_run_id") or "",
+                            deal_id           = _pipeline_state.get("deal_id") or "",
+                            agent_name        = agent_name,
+                            stage_order       = sn,
+                            query_text        = result_or_exc.get("search_query") or "",
+                            retrieved_chunks  = result_or_exc.get("retrieved_chunks") or [],
+                            final_prompt_hash = _rag_hash,
+                            completion_tokens = result_or_exc.get("completion_tokens"),
+                        )
+                    except Exception as _rc_exc:
+                        logger.warning("save_rag_context failed agent=%s — %s", agent_name, _rc_exc)
 
             for ev in pending_events:
                 yield ev
@@ -2032,6 +2213,24 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 "Agent Notes/neural_slacr.md" if agent_name_out == "interpreter"
                 else result_or_exc.get("saved_to"),
             )
+            # 3C.6 / 3E.7 — RAG context capture for single-agent path (Issue I fix)
+            try:
+                from services import mongo_service as _mongo_rag_sa
+                import hashlib as _hashlib_sa
+                _rag_prompt_sa = result_or_exc.get("prompt") or result_or_exc.get("reply") or ""
+                _rag_hash_sa   = _hashlib_sa.sha256(_rag_prompt_sa.encode()).hexdigest() if _rag_prompt_sa else None
+                _mongo_rag_sa.save_rag_context(
+                    pipeline_run_id   = _pipeline_state.get("pipeline_run_id") or "",
+                    deal_id           = _pipeline_state.get("deal_id") or "",
+                    agent_name        = agent_name_out,
+                    stage_order       = sn,
+                    query_text        = result_or_exc.get("search_query") or "",
+                    retrieved_chunks  = result_or_exc.get("retrieved_chunks") or [],
+                    final_prompt_hash = _rag_hash_sa,
+                    completion_tokens = result_or_exc.get("completion_tokens"),
+                )
+            except Exception as _rc_sa_exc:
+                logger.warning("save_rag_context (single-agent) failed agent=%s — %s", agent_name_out, _rc_sa_exc)
 
             # ── IP1: seed SQL + Neo4j after extraction ────────────────────────
             if agent_name_out == "extraction":
@@ -2175,7 +2374,7 @@ def run_pipeline_stream(session_id: str, message: str = ""):
             _pipeline_state["pipeline_run_id"],
             status=_pr_status,
             stages_completed=list(PIPELINE_SEQUENCE),
-            duration_seconds=total_elapsed // 1000,
+            total_elapsed_ms=total_elapsed,
         )
     except Exception as _fin_exc:
         logger.warning("pipeline completion: update_pipeline_run failed — %s", _fin_exc)
@@ -2189,6 +2388,17 @@ def run_pipeline_stream(session_id: str, message: str = ""):
         )
     except Exception as _mfin_exc:
         logger.warning("pipeline completion: close_pipeline_run (mongo) failed — %s", _mfin_exc)
+    # Neo4j PipelineRun node — update status to complete/partial (Issue D fix)
+    try:
+        import datetime as _dt_fin
+        from services import graph_service as _gs_fin
+        _gs_fin.update_pipeline_run_node_status(
+            pipeline_run_id = _pipeline_state.get("pipeline_run_id", ""),
+            status          = "complete" if steps_failed == 0 else "partial",
+            completed_at    = _dt_fin.datetime.utcnow().isoformat() + "Z",
+        )
+    except Exception as _neo_fin_exc:
+        logger.warning("pipeline completion: update_pipeline_run_node_status failed — %s", _neo_fin_exc)
     yield json.dumps({
         "type":              "pipeline_complete",
         "steps_done":        steps_done,

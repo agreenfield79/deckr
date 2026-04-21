@@ -16,6 +16,14 @@ Architecture:
 Public API (used by agent_service):
   update_file(rel_path, text)         — called by workspace_service.write_file()
   get_relevant_context(query, folders) — replaces _load_context() when enabled
+  embed_query(text)                   — single-text embedding for cross-service use
+
+DISTINCT FROM: vector_service.py + ChromaDB, which indexes uploaded financial
+  document chunks for ANN similarity search. This file indexes workspace .md
+  files only and never reads from or writes to ChromaDB or the SQL embeddings
+  table. The two systems share no index stores:
+    embeddings_service.py  -> backend/.deckr_embeddings.json
+    vector_service.py      -> backend/data/.chroma/
 """
 
 import json
@@ -122,6 +130,27 @@ def _embed(texts: list[str]) -> list[list[float]]:
     vectors = [r["embedding"] for r in resp.json()["results"]]
     logger.debug("embeddings_service._embed: %d texts, %dms", len(texts), elapsed)
     return vectors
+
+
+def embed_query(text: str) -> list[float] | None:
+    """
+    Public single-text embedding helper for cross-service use.
+
+    Wraps ``_embed([text])`` with D-3 error handling.  Returns the embedding
+    vector as a flat ``list[float]``, or ``None`` if the call fails (e.g.
+    watsonx unavailable, ``ENABLE_EMBEDDINGS=false``).
+
+    Used by ``tool_service.search_documents`` to generate query embeddings
+    for ``vector_service.similarity_search()`` (document chunk ANN search).
+    Both systems use the same model (ibm/slate-125m-english-rtrvr-v2) so the
+    vectors are compatible.
+    """
+    try:
+        vectors = _embed([text])
+        return vectors[0] if vectors else None
+    except Exception as exc:
+        logger.warning("embeddings_service.embed_query failed: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------

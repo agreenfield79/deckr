@@ -309,7 +309,7 @@ def close_pipeline_run(pipeline_run_id: str, status: str = "complete",
         db = _db()
         if db is None:
             return False
-        db.pipeline_runs.update_one(
+        result = db.pipeline_runs.update_one(
             {"pipeline_run_id": pipeline_run_id},
             {"$set": {
                 "status":           status,
@@ -318,6 +318,12 @@ def close_pipeline_run(pipeline_run_id: str, status: str = "complete",
                 "updated_at":       _now().isoformat(),
             }},
         )
+        if result.modified_count == 0:
+            logger.warning(
+                "close_pipeline_run: no document matched pipeline_run_id=%s — "
+                "open_pipeline_run may have failed silently at IP1",
+                pipeline_run_id,
+            )
         return True
     except Exception as exc:
         logger.warning("close_pipeline_run failed: %s", exc)
@@ -326,7 +332,12 @@ def close_pipeline_run(pipeline_run_id: str, status: str = "complete",
 
 def get_pipeline_run_history(deal_id: str | None = None,
                               limit: int = 20) -> list[dict]:
-    """Return recent pipeline runs, newest first. Optionally filter by deal_id."""
+    """
+    Return recent pipeline runs, newest first. Optionally filter by deal_id.
+
+    Each run is enriched with its stage records from pipeline_stage_logs
+    (Phase 2B stores stages in a separate collection, not embedded in pipeline_runs).
+    """
     try:
         db = _db()
         if db is None:
@@ -337,40 +348,44 @@ def get_pipeline_run_history(deal_id: str | None = None,
             .sort("started_at", -1)
             .limit(limit)
         )
+
+        # Join each run with its stage telemetry from pipeline_stage_logs.
+        # Only the fields the frontend needs are projected to keep payloads small.
+        _stage_projection = {
+            "_id": 0,
+            "agent_name": 1,
+            "stage_order": 1,
+            "status": 1,
+            "elapsed_ms": 1,
+            "started_at": 1,
+            "completed_at": 1,
+            "saved_to": 1,
+        }
+        for doc in docs:
+            run_id = doc.get("pipeline_run_id")
+            if run_id:
+                stages = list(
+                    db.pipeline_stage_logs
+                    .find({"pipeline_run_id": run_id}, _stage_projection)
+                    .sort("stage_order", 1)
+                )
+                doc["stages"] = stages
+            else:
+                doc["stages"] = []
+
         return docs
     except Exception as exc:
         logger.warning("get_pipeline_run_history failed: %s", exc)
         return []
 
 
-def cache_pipeline_run(pipeline_run_id: str, deal_id: str,
-                       workspace_id: str, status: str,
-                       stages_completed: list | None = None) -> bool:
-    try:
-        db = _db()
-        if db is None:
-            return False
-        db.pipeline_runs.update_one(
-            {"pipeline_run_id": pipeline_run_id},
-            {"$set": {
-                "pipeline_run_id":  pipeline_run_id,
-                "deal_id":          deal_id,
-                "workspace_id":     workspace_id,
-                "status":           status,
-                "stages_completed": stages_completed or [],
-                "updated_at":       _now().isoformat(),
-            }},
-            upsert=True,
-        )
-        return True
-    except Exception as exc:
-        logger.warning("cache_pipeline_run failed: %s", exc)
-        return False
 
 
 # ---------------------------------------------------------------------------
 # pipeline_stage_logs — per-stage telemetry (Group C, Phase 2B)
 # Replaces pipeline_runs.stages[] embedded array.
+# cache_pipeline_run() removed — 3E.2: dead code (never called from pipeline).
+# open_pipeline_run() + close_pipeline_run() already satisfy Phase 2B spec.
 # ---------------------------------------------------------------------------
 
 def save_stage_log(pipeline_run_id: str, deal_id: str, agent_name: str,
@@ -421,8 +436,8 @@ def save_stage_log(pipeline_run_id: str, deal_id: str, agent_name: str,
 
 def save_rag_context(pipeline_run_id: str, deal_id: str, agent_name: str,
                      stage_order: int, query_text: str,
-                     retrieved_chunks: list, final_prompt_hash: str,
-                     completion_tokens: int) -> bool:
+                     retrieved_chunks: list, final_prompt_hash: str | None = None,
+                     completion_tokens: int | None = None) -> bool:
     """
     Capture RAG retrieval context for one agent invocation.
     retrieved_chunks: list of {chunk_id, document_id, file_name, chunk_index, score}
@@ -759,3 +774,96 @@ def upsert_prompt_version(agent_name: str, version: str,
     except Exception as exc:
         logger.warning("upsert_prompt_version failed: %s", exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# External Evidence Helpers — 3E.2
+# ---------------------------------------------------------------------------
+
+def get_external_evidence_text(deal_id: str) -> str:
+    """
+    Return concatenated text from all external evidence collections for a deal.
+    Queries: news_articles (body), reviews (full_text), court_filings (full_text),
+             document_chunks (text). Also includes industry_reports keyed by naics_code
+             if the deal's naics_code can be resolved from SQL.
+    Used by word cloud endpoint and agent RAG context enrichment.
+    Returns empty string on any failure (D-3).
+    """
+    try:
+        db = _db()
+        if db is None:
+            return ""
+
+        parts: list[str] = []
+
+        # news_articles — body text
+        try:
+            for doc in db.news_articles.find({"deal_id": deal_id}, {"body": 1, "_id": 0}):
+                if doc.get("body"):
+                    parts.append(doc["body"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: news_articles failed: %s", exc)
+
+        # reviews — full_text
+        try:
+            for doc in db.reviews.find({"deal_id": deal_id}, {"full_text": 1, "_id": 0}):
+                if doc.get("full_text"):
+                    parts.append(doc["full_text"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: reviews failed: %s", exc)
+
+        # court_filings — full_text
+        try:
+            for doc in db.court_filings.find({"deal_id": deal_id}, {"full_text": 1, "_id": 0}):
+                if doc.get("full_text"):
+                    parts.append(doc["full_text"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: court_filings failed: %s", exc)
+
+        # regulatory_actions — full_text
+        try:
+            for doc in db.regulatory_actions.find({"deal_id": deal_id}, {"full_text": 1, "_id": 0}):
+                if doc.get("full_text"):
+                    parts.append(doc["full_text"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: regulatory_actions failed: %s", exc)
+
+        # press_releases — body
+        try:
+            for doc in db.press_releases.find({"deal_id": deal_id}, {"body": 1, "_id": 0}):
+                if doc.get("body"):
+                    parts.append(doc["body"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: press_releases failed: %s", exc)
+
+        # document_chunks — text
+        try:
+            for doc in db.document_chunks.find({"deal_id": deal_id}, {"text": 1, "_id": 0}):
+                if doc.get("text"):
+                    parts.append(doc["text"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: document_chunks failed: %s", exc)
+
+        # industry_reports — body (keyed by naics_code from SQL)
+        try:
+            from services import sql_service as _sql_ev
+            from models.sql_models import Deal
+            from services.db_factory import get_sql_session
+            from sqlalchemy import select as _select
+            with next(get_sql_session()) as _sess:
+                deal_row = _sess.execute(
+                    _select(Deal).where(Deal.deal_id == deal_id).limit(1)
+                ).scalar_one_or_none()
+            if deal_row and deal_row.naics_code:
+                for doc in db.industry_reports.find(
+                    {"naics_code": deal_row.naics_code}, {"body": 1, "_id": 0}
+                ):
+                    if doc.get("body"):
+                        parts.append(doc["body"])
+        except Exception as exc:
+            logger.warning("get_external_evidence_text: industry_reports failed: %s", exc)
+
+        return "\n\n".join(parts)
+    except Exception as exc:
+        logger.warning("get_external_evidence_text failed: %s", exc)
+        return ""

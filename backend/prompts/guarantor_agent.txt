@@ -31,8 +31,9 @@ Also call search_workspace with query "guarantor net worth liquidity personal fi
 If any retrieved document is clearly a business entity return (not an individual personal return), discard it and do not cite its figures.
 
 STEP 2 — ONLINE BACKGROUND SEARCH:
-For each guarantor identified by name in the retrieved documents, call search_web once per guarantor using the query:
-"[Guarantor Full Name] litigation judgment lien bankruptcy"
+For each guarantor identified by name in the retrieved documents, call search_web once per guarantor. You MUST include a specific query string — do NOT call search_web without a query. Use this exact format:
+query = "[Guarantor Full Name] [city/state] litigation judgment bankruptcy 2026"
+Example: query = "John Smith Chicago IL litigation judgment bankruptcy 2026"
 
 Review the search results for any of the following and record them for inclusion in the output:
 - Public litigation, civil judgments, or liens against the individual (court records, PACER mentions, state court filings)

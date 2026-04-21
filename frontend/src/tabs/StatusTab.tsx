@@ -289,9 +289,12 @@ function SystemHealthPanel({ health, loading, onRefresh }: SystemHealthPanelProp
 
   return (
     <div className="mt-6 border border-[#e0e0e0] rounded bg-white overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors cursor-pointer"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
       >
         <span className="flex items-center gap-2">
           <Server size={13} className="text-[#525252]" />
@@ -315,7 +318,7 @@ function SystemHealthPanel({ health, loading, onRefresh }: SystemHealthPanelProp
           </button>
           <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 space-y-3 text-xs">
@@ -436,9 +439,12 @@ function PipelineHistoryPanel() {
 
   return (
     <div className="mt-4 border border-[#e0e0e0] rounded bg-white overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors cursor-pointer"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
       >
         <span className="flex items-center gap-2">
           <History size={13} className="text-[#525252]" />
@@ -462,7 +468,7 @@ function PipelineHistoryPanel() {
           )}
           <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-[#e0e0e0]">
@@ -497,7 +503,7 @@ function PipelineHistoryPanel() {
                     {formatElapsed(run.total_elapsed_ms)}
                   </span>
                 </button>
-                {isOpen && run.stages.length > 0 && (
+                {isOpen && (run.stages?.length ?? 0) > 0 && (
                   <div className="px-4 pb-2 bg-[#f9f9f9]">
                     <table className="w-full text-[10px]">
                       <thead>
@@ -510,7 +516,7 @@ function PipelineHistoryPanel() {
                       </thead>
                       <tbody>
                         {run.stages.map((s) => (
-                          <tr key={s.stage_order} className="border-t border-[#f0f0f0]">
+                          <tr key={`${s.stage_order}-${s.agent_name}`} className="border-t border-[#f0f0f0]">
                             <td className="py-1 pr-2 text-[#a8a8a8]">{s.stage_order}</td>
                             <td className="py-1 pr-2 font-medium text-[#161616]">{s.agent_name}</td>
                             <td className="py-1 pr-2">
@@ -525,9 +531,9 @@ function PipelineHistoryPanel() {
                     </table>
                   </div>
                 )}
-                {isOpen && run.stages.length === 0 && (
+                {isOpen && !(run.stages?.length ?? 0) && (
                   <p className="px-4 pb-2 text-[10px] text-[#a8a8a8] italic bg-[#f9f9f9]">
-                    Stage details not available (run pre-dates Group 3 wiring)
+                    Stage details not available (run pre-dates stage logging)
                   </p>
                 )}
               </div>

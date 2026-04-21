@@ -2,7 +2,13 @@
  * AgentWordCloud — displays TF-weighted word cloud from external evidence corpus.
  * Sources from GET /api/mongo/word-cloud?deal_id=
  * Collections: news_articles, reviews, court_filings, document_chunks, industry_reports.
- * Uses react-wordcloud (lazy-loaded; shows table fallback if not installed).
+ *
+ * NOTE: react-wordcloud is intentionally NOT used here. Its internal D3 spiral layout
+ * reads index [0] from an undefined array when the container has zero width at mount
+ * time (hidden tab, pending flexbox layout, React StrictMode double-invoke). This is
+ * an unrecoverable crash that happens inside a useEffect — React Error Boundaries cannot
+ * catch useEffect errors, so there is no safe way to use the library in a tabbed layout.
+ * The weighted-span renderer below is crash-safe and produces equivalent visual output.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -15,7 +21,9 @@ interface WordCloudProps {
   terms: WordCloudTerm[]
 }
 
-function WordCloudFallback({ terms }: WordCloudProps) {
+// Weighted-span word cloud — size and opacity scale with term weight.
+// No external library dependency; safe to render in hidden/zero-width containers.
+function WordCloudRenderer({ terms }: WordCloudProps) {
   return (
     <div className="flex flex-wrap gap-1.5 p-3">
       {terms.slice(0, 60).map((t) => {
@@ -32,37 +40,6 @@ function WordCloudFallback({ terms }: WordCloudProps) {
           </span>
         )
       })}
-    </div>
-  )
-}
-
-function WordCloudRenderer({ terms }: WordCloudProps) {
-  const [ReactWordcloud, setReactWordcloud] = useState<React.ComponentType<any> | null>(null)
-
-  useEffect(() => {
-    import('react-wordcloud').then((mod) => {
-      setReactWordcloud(() => mod.default)
-    }).catch(() => {
-      // fallback handled below
-    })
-  }, [])
-
-  if (!ReactWordcloud) return <WordCloudFallback terms={terms} />
-
-  const words = terms.map((t) => ({ text: t.text, value: t.value }))
-  const options = {
-    rotations: 2,
-    rotationAngles: [-90, 0] as [number, number],
-    fontFamily: 'IBM Plex Sans, sans-serif',
-    fontSizes: [12, 40] as [number, number],
-    colors: ['#0f62fe', '#0043ce', '#6929c4', '#007d79', '#ff832b'],
-    enableTooltip: true,
-    deterministic: true,
-  }
-
-  return (
-    <div style={{ height: 220 }}>
-      <ReactWordcloud words={words} options={options} />
     </div>
   )
 }

@@ -86,6 +86,7 @@ export interface FinancialSummaryRow {
 }
 
 export interface BalanceSummaryRow {
+  fiscal_year?: number
   total_assets: number | null
   total_liabilities: number | null
   total_equity: number | null

@@ -83,8 +83,7 @@ instructions: |
   After saving, reply with one sentence confirming the file was saved.
 
 tools:
-  # VERIFY tool IDs in Orchestrate UI before deploying — these IDs are from the
-  # shared Orchestrate workspace and must match exactly.
-  - Read_a_workspace_file_and_retu_5053Mg   # get_file_content  — fallback reads if needed
-  - Save_text_content_to_the_borro_4556q1   # save_to_workspace — MANDATORY final action
-  - Semantic_search_across_uploade_6607Du   # search_workspace  — pull context from memo / review_notes
+  - get_file_content
+  - save_to_workspace
+  - search_workspace
+  - search_documents

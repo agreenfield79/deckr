@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import text as _sa_text
+
 logger = logging.getLogger("deckr.sql_service")
 
 # ---------------------------------------------------------------------------
@@ -389,7 +391,7 @@ def insert_pipeline_run(pipeline_run_id: str, deal_id: str,
 
 def update_pipeline_run(pipeline_run_id: str, status: str,
                         stages_completed: list | None = None,
-                        duration_seconds: int | None = None) -> bool:
+                        total_elapsed_ms: int | None = None) -> bool:
     try:
         @_sql_retry
         def _execute():
@@ -402,8 +404,8 @@ def update_pipeline_run(pipeline_run_id: str, status: str,
                     run.completed_at = _now()
                     if stages_completed is not None:
                         run.stages_completed = stages_completed
-                    if duration_seconds is not None:
-                        run.total_duration_seconds = duration_seconds
+                    if total_elapsed_ms is not None:
+                        run.total_elapsed_ms = total_elapsed_ms
                     session.commit()
         _execute()
         return True
@@ -421,9 +423,9 @@ def insert_stage_log(pipeline_run_id: str, agent_name: str, stage_order: int,
         from services.db_factory import get_sql_session
         from models.sql_models import PipelineStageLog
         with next(get_sql_session()) as session:
-            duration = None
+            elapsed = None
             if completed_at and started_at:
-                duration = int((completed_at - started_at).total_seconds())
+                elapsed = int((completed_at - started_at).total_seconds() * 1000)
             session.add(PipelineStageLog(
                 log_id=str(uuid4()),
                 pipeline_run_id=pipeline_run_id,
@@ -431,7 +433,7 @@ def insert_stage_log(pipeline_run_id: str, agent_name: str, stage_order: int,
                 stage_order=stage_order,
                 started_at=started_at,
                 completed_at=completed_at or _now(),
-                duration_seconds=duration,
+                elapsed_ms=elapsed,
                 output_file_path=output_file_path,
                 status=status,
                 token_count_input=token_count_input,
@@ -1147,3 +1149,48 @@ def grant_deal_access(user_id: str, deal_id: str, access_level: str, granted_by:
     except Exception as exc:
         logger.warning("grant_deal_access failed: %s", exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# SQL View Helpers — 3E.1 / 3E.8
+# Wrappers around the v_deal_snapshot and v_projection_stress views.
+# ---------------------------------------------------------------------------
+
+def get_deal_snapshot(deal_id: str) -> dict | None:
+    """
+    Query v_deal_snapshot for a single deal.
+    Returns a dict with the latest SLACR score, ratios, pipeline run, and deal metadata,
+    or None if the deal does not exist.
+    """
+    try:
+        from services.db_factory import get_sql_session
+        with next(get_sql_session()) as session:
+            row = session.execute(
+                _sa_text("SELECT * FROM v_deal_snapshot WHERE deal_id = :did"),
+                {"did": deal_id},
+            ).mappings().first()
+            return dict(row) if row else None
+    except Exception as exc:
+        logger.warning("get_deal_snapshot failed: %s", exc)
+        return None
+
+
+def get_projection_stress(deal_id: str, pipeline_run_id: str) -> list[dict]:
+    """
+    Query v_projection_stress for a deal + pipeline run.
+    Returns a list of rows (scenario × year covenant heat map), or [] on failure.
+    """
+    try:
+        from services.db_factory import get_sql_session
+        with next(get_sql_session()) as session:
+            rows = session.execute(
+                _sa_text(
+                    "SELECT * FROM v_projection_stress "
+                    "WHERE deal_id = :did AND pipeline_run_id = :run"
+                ),
+                {"did": deal_id, "run": pipeline_run_id},
+            ).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.warning("get_projection_stress failed: %s", exc)
+        return []

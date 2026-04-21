@@ -297,14 +297,14 @@ def log_pipeline_run(
     workspace_id: str = None,
     status: str = "complete",
     stages_completed: list | None = None,
-    total_duration_seconds: int | None = None,
+    total_elapsed_ms: int | None = None,
     **kwargs,
 ) -> dict:
     """
     IP2 tool — Insert or update a pipeline_run record in SQL.
 
     If the pipeline_run_id already exists, updates its status, stages_completed,
-    and total_duration_seconds. Otherwise, inserts a new record.
+    and total_elapsed_ms. Otherwise, inserts a new record.
     """
     if not pipeline_run_id:
         raise ValueError("'pipeline_run_id' is required.")
@@ -327,7 +327,7 @@ def log_pipeline_run(
             pipeline_run_id=pipeline_run_id,
             status=status,
             stages_completed=stages_completed,
-            duration_seconds=total_duration_seconds,
+            total_elapsed_ms=total_elapsed_ms,
         )
     else:
         # Row freshly inserted; stamp final status.
@@ -335,7 +335,7 @@ def log_pipeline_run(
             pipeline_run_id=pipeline_run_id,
             status=status,
             stages_completed=stages_completed,
-            duration_seconds=total_duration_seconds,
+            total_elapsed_ms=total_elapsed_ms,
         )
 
     logger.info(
@@ -372,12 +372,21 @@ def get_entity_graph(deal_id: str = None, **kwargs) -> dict:
         return {"nodes": [], "relationships": [], "error": str(exc)}
 
 
-def search_documents(query: str = None, top_k: int = 5, folders: list[str] | None = None, **kwargs) -> list[dict]:
+def search_documents(query: str = None, top_k: int = 5, deal_id: str | None = None,
+                     folders: list[str] | None = None, **kwargs) -> list[dict]:
     """
-    IP3 tool — Vector ANN similarity search across indexed workspace documents.
+    IP3 tool — Vector ANN similarity search across indexed document chunks.
 
-    Returns a ranked list of document chunks with text, metadata, and distance.
+    Searches the document chunk vector store (vector_service / ChromaDB or
+    pgvector) for chunks semantically similar to ``query``.  Results are
+    optionally scoped to a specific deal via ``deal_id``.
+
     Falls back to keyword-based workspace search if embeddings are unavailable.
+
+    Note: ``folders`` is accepted for backwards-compatibility with System 1
+    (embeddings_service.get_relevant_context) call patterns but is NOT forwarded
+    to the vector store — ChromaDB metadata uses ``deal_id`` for scoping, not
+    folder paths.  Pass ``deal_id`` to scope results to a specific borrower.
     """
     if not query:
         raise ValueError(
@@ -392,26 +401,25 @@ def search_documents(query: str = None, top_k: int = 5, folders: list[str] | Non
             from services import embeddings_service, vector_service
             embedding = embeddings_service.embed_query(query)
             if embedding:
-                where = {"folder": {"$in": folders}} if folders else None
                 results = vector_service.similarity_search(
                     query_embedding=embedding,
                     n_results=top_k,
-                    where=where,
+                    deal_id=deal_id,
                 )
                 logger.info(
-                    "tool_service.search_documents: embedding search — query_len=%d hits=%d",
-                    len(query), len(results),
+                    "tool_service.search_documents: vector search — query_len=%d deal_id=%s hits=%d",
+                    len(query), deal_id, len(results),
                 )
                 return results
         except Exception as exc:
-            logger.warning("tool_service.search_documents: embedding search failed (%s) — falling back", exc)
+            logger.warning("tool_service.search_documents: vector search failed (%s) — falling back", exc)
 
     # Fallback: text-based search via search_workspace
     text_results = search_workspace(query=query, folders=folders)
     return [{"text": text_results, "metadata": {}, "distance": None}]
 
 
-def search_web(query: str = None, max_results: int = 5, **kwargs) -> str:
+def search_web(query: str = None, inputs: dict = None, max_results: int = 5, **kwargs) -> str:
     """
     Live web search via SerpAPI (Google Search results).
 
@@ -419,8 +427,13 @@ def search_web(query: str = None, max_results: int = 5, **kwargs) -> str:
     Requires SERPAPI_KEY in environment.  Free tier: 100 searches/month.
     Sign up at serpapi.com.
 
-    **kwargs absorbs extra metadata fields Orchestrate may inject.
+    ``inputs`` handles the double-wrapped payload Orchestrate sometimes sends when the
+    model fires the tool before deciding on a query string.
+    **kwargs absorbs any remaining extra metadata fields Orchestrate may inject.
     """
+    # Unwrap nested inputs dict if Orchestrate double-wraps the payload
+    if not query and isinstance(inputs, dict):
+        query = inputs.get("query")
     if not query:
         logger.warning("tool_service.search_web: 'query' argument missing — returning guidance")
         return (
@@ -468,6 +481,81 @@ def search_web(query: str = None, max_results: int = 5, **kwargs) -> str:
     return result
 
 
+# ---------------------------------------------------------------------------
+# SQL View Query Handlers — 3E.8
+# These wrap the read-only SQL views added in Phase 3B.8.
+# ---------------------------------------------------------------------------
+
+def query_ratios(deal_id: str = None, entity_id: str = None, **kwargs) -> list[dict]:
+    """
+    Query v_ratio_dashboard — DSCR, leverage, and coverage ratios per year.
+    Returns a list of rows sorted by fiscal_year ascending.
+    """
+    if not deal_id and not entity_id:
+        raise ValueError("Either 'deal_id' or 'entity_id' must be provided.")
+    if kwargs:
+        logger.debug("tool_service.query_ratios: ignoring extra kwargs %s", list(kwargs.keys()))
+    from services import sql_service
+    eid = entity_id
+    if not eid and deal_id:
+        eid = sql_service.get_entity_id_for_deal(deal_id)
+    if not eid:
+        return []
+    try:
+        from services.db_factory import get_sql_session
+        from sqlalchemy import text as _t
+        with next(get_sql_session()) as session:
+            rows = session.execute(
+                _t("SELECT * FROM v_ratio_dashboard WHERE entity_id = :eid ORDER BY fiscal_year"),
+                {"eid": eid},
+            ).mappings().all()
+        result = [dict(r) for r in rows]
+    except Exception as exc:
+        logger.warning("tool_service.query_ratios failed: %s", exc)
+        result = []
+    logger.info("tool_service.query_ratios: entity_id=%s rows=%d", eid, len(result))
+    return result
+
+
+def query_deal_snapshot(deal_id: str = None, **kwargs) -> dict | None:
+    """
+    Query v_deal_snapshot for a single deal's latest SLACR score, ratios, and pipeline metadata.
+    Returns a single dict or None if the deal does not exist.
+    """
+    if not deal_id:
+        raise ValueError("'deal_id' is required.")
+    if kwargs:
+        logger.debug("tool_service.query_deal_snapshot: ignoring extra kwargs %s", list(kwargs.keys()))
+    from services import sql_service
+    result = sql_service.get_deal_snapshot(deal_id)
+    logger.info("tool_service.query_deal_snapshot: deal_id=%s found=%s", deal_id, result is not None)
+    return result
+
+
+def query_projection_stress(
+    deal_id: str = None,
+    pipeline_run_id: str = None,
+    **kwargs,
+) -> list[dict]:
+    """
+    Query v_projection_stress — scenario × year covenant heat map for a deal + pipeline run.
+    Returns a list of rows (one row per scenario × projection year).
+    """
+    if not deal_id:
+        raise ValueError("'deal_id' is required.")
+    if not pipeline_run_id:
+        raise ValueError("'pipeline_run_id' is required.")
+    if kwargs:
+        logger.debug("tool_service.query_projection_stress: ignoring extra kwargs %s", list(kwargs.keys()))
+    from services import sql_service
+    result = sql_service.get_projection_stress(deal_id, pipeline_run_id)
+    logger.info(
+        "tool_service.query_projection_stress: deal_id=%s run=%s rows=%d",
+        deal_id, pipeline_run_id, len(result),
+    )
+    return result
+
+
 # Register all handlers after they are defined
 _HANDLERS = {
     "save_to_workspace":       save_to_workspace,
@@ -479,6 +567,9 @@ _HANDLERS = {
     # Phase 5B — Storage integration tools (IP1/IP2/IP3)
     "store_extraction":        store_extraction,
     "query_financials":        query_financials,
+    "query_ratios":            query_ratios,
+    "query_deal_snapshot":     query_deal_snapshot,
+    "query_projection_stress": query_projection_stress,
     "log_pipeline_run":        log_pipeline_run,
     "get_entity_graph":        get_entity_graph,
     "search_documents":        search_documents,

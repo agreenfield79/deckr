@@ -156,6 +156,7 @@ def _sql_seed_atomic(
                         lt = json.load(f)
                     session.add(LoanTerms(
                         loan_terms_id=str(_uuid4()), deal_id=deal_id,
+                        entity_id=entity_id,
                         created_at=now, **_map_loan_terms(lt),
                     ))
                 except Exception as exc:
@@ -322,6 +323,7 @@ def seed(workspace_root: str, deal_id: str | None = None,
             legal_name=borrower_name,
             naics_code=naics_code,
             role="borrower",
+            entity_type="borrower_company",
             dba=company_data.get("dba"),
             formation_date=company_data.get("formation_date"),
             status=company_data.get("status"),
@@ -356,10 +358,49 @@ def seed(workspace_root: str, deal_id: str | None = None,
         )
 
     # Document nodes — one per uploaded file (Phase 3D.2)
-    for upload_info in data.get("uploaded_documents", []):
+    # If the extraction agent didn't populate uploaded_documents, fall back to a
+    # workspace directory scan so chunking still runs for any PDFs/docs present.
+    uploaded_documents = data.get("uploaded_documents") or []
+    if not uploaded_documents:
+        _ws_root_path = os.path.join(workspace_root)
+        _chunkable_exts = {".pdf", ".txt", ".md", ".docx"}
+        _skip_dirs = {"Agent Notes", "Deck", "Loan Request", "Borrower"}
+        try:
+            for _dirpath, _dirs, _fnames in os.walk(_ws_root_path):
+                _rel_dir = os.path.relpath(_dirpath, _ws_root_path)
+                if any(_rel_dir.startswith(sd) for sd in _skip_dirs):
+                    continue
+                for _fname in _fnames:
+                    if any(_fname.lower().endswith(ext) for ext in _chunkable_exts):
+                        _abs = os.path.join(_dirpath, _fname)
+                        _rel = os.path.relpath(_abs, _ws_root_path).replace("\\", "/")
+                        uploaded_documents.append({
+                            "document_id": str(__import__("uuid").uuid4()),
+                            "file_name": _fname,
+                            "file_path": _abs,
+                            "document_type": "financial_statement" if "Financials" in _dirpath else "other",
+                        })
+        except Exception as _scan_exc:
+            logger.warning("IP1: workspace scan for uploaded_documents failed — %s", _scan_exc)
+
+    for upload_info in uploaded_documents:
         doc_id = upload_info.get("document_id", "")
         if not doc_id:
             continue
+        # SQL documents row must exist BEFORE chunk_and_index_document so that
+        # MongoDB document_chunks.document_id FK resolves (target schema 2D).
+        try:
+            sql_service.insert_document(
+                workspace_id  = workspace_id,
+                deal_id       = deal_id,
+                file_name     = upload_info.get("file_name", ""),
+                file_path     = upload_info.get("file_path", ""),
+                document_type = upload_info.get("document_type") or "other",
+                entity_id     = entity_id,
+                document_id   = doc_id,
+            )
+        except Exception as _doc_exc:
+            logger.warning("IP1: insert_document failed doc=%s — %s", doc_id, _doc_exc)
         graph_service.write_document_node(
             document_id=doc_id,
             deal_id=deal_id,
@@ -373,6 +414,19 @@ def seed(workspace_root: str, deal_id: str | None = None,
                 document_id=doc_id,
                 role="borrower",
             )
+        # 3E.5 — Chunk and index document text into MongoDB + vector store (D-3: fail-silent)
+        if entity_id:
+            try:
+                from services import extraction_service as _ext_svc
+                _ext_svc.chunk_and_index_document(
+                    relative_path = upload_info.get("file_path", ""),
+                    document_id   = doc_id,
+                    deal_id       = deal_id,
+                    entity_id     = entity_id,
+                    document_type = upload_info.get("document_type"),
+                )
+            except Exception as _ce:
+                logger.warning("IP1: chunk_and_index_document failed doc=%s — %s", doc_id, _ce)
 
     # Guarantor nodes
     for g in data.get("guarantors", []):

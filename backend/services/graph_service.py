@@ -64,6 +64,7 @@ def write_company_node(deal_id: str, entity_id: str, legal_name: str,
                        dba: str | None = None,
                        formation_date: str | None = None,
                        status: str | None = None,
+                       entity_type: str | None = None,
                        **kwargs) -> bool:
     """Company node — identity fields only; no amounts."""
     cypher = """
@@ -74,6 +75,7 @@ def write_company_node(deal_id: str, entity_id: str, legal_name: str,
         "deal_id": deal_id, "legal_name": legal_name,
         "naics_code": naics_code, "role": role,
         "dba": dba, "formation_date": formation_date, "status": status,
+        "entity_type": entity_type,
         **kwargs,
     }
     return _run(cypher, {"entity_id": entity_id, "props": props}) is not None
@@ -147,6 +149,21 @@ def write_pipeline_run_node(pipeline_run_id: str, deal_id: str,
     """
     props = {"deal_id": deal_id, "started_at": started_at, "status": status}
     return _run(cypher, {"pipeline_run_id": pipeline_run_id, "props": props}) is not None
+
+
+def update_pipeline_run_node_status(
+    pipeline_run_id: str, status: str, completed_at: str | None = None
+) -> bool:
+    """Update PipelineRun node status to complete/failed when the pipeline finishes."""
+    cypher = """
+    MATCH (pr:PipelineRun {pipeline_run_id: $pr_id})
+    SET pr.status = $status, pr.completed_at = $completed_at
+    """
+    return _run(cypher, {
+        "pr_id": pipeline_run_id,
+        "status": status,
+        "completed_at": completed_at,
+    }) is not None
 
 
 def write_property_node(property_id: str, deal_id: str,
@@ -1438,14 +1455,24 @@ def write_insured_by_edge(entity_id: str, carrier_id: str,
 # ---------------------------------------------------------------------------
 
 def get_deal_graph(deal_id: str) -> dict[str, Any]:
-    """Return all nodes and relationships scoped to a deal_id."""
+    """Return deal structure nodes and relationships scoped to a deal_id.
+
+    PipelineRun and Document nodes are excluded — they are operational/audit
+    records, not deal structure elements, and clutter the visualization.
+    """
     nodes_result = _run(
-        "MATCH (n {deal_id: $deal_id}) RETURN labels(n) AS labels, properties(n) AS props",
+        """
+        MATCH (n {deal_id: $deal_id})
+        WHERE NOT n:PipelineRun AND NOT n:Document
+        RETURN labels(n) AS labels, properties(n) AS props
+        """,
         {"deal_id": deal_id}
     )
     rels_result = _run(
         """
         MATCH (a {deal_id: $deal_id})-[r]-(b)
+        WHERE NOT a:PipelineRun AND NOT a:Document
+          AND NOT b:PipelineRun AND NOT b:Document
         RETURN properties(a) AS source, type(r) AS rel_type, properties(b) AS target
         """,
         {"deal_id": deal_id}
@@ -1464,6 +1491,99 @@ def get_deal_graph(deal_id: str) -> dict[str, Any]:
     ]
     return {
         "nodes": nodes,
+        "relationships": relationships,
+    }
+
+
+# Canonical PK fields in priority order — must mirror frontend getNodeIdFromProps.
+_ENRICHMENT_PK_FIELDS = (
+    "entity_id", "filing_id", "article_id", "action_id",
+    "lien_id", "address_id", "agent_id", "review_id", "node_id",
+)
+
+
+def _enrich_ext_props(props: dict) -> dict:
+    """
+    Inject a synthetic `node_id` field for external enrichment nodes that carry
+    no canonical PK.  Without it the frontend's getNodeIdFromProps() returns null
+    and all edges to those nodes are silently dropped.
+
+    NewsArticle nodes use `url` as their Neo4j key, UCC filings may use
+    `secured_party`, court actions may use `case_number`.  We map the best
+    available identifier to `node_id` so the frontend can resolve the edge target.
+    """
+    if any(props.get(f) for f in _ENRICHMENT_PK_FIELDS):
+        return props  # already has a recognised canonical PK
+    result = dict(props)
+    result["node_id"] = (
+        props.get("url")
+        or props.get("case_number")
+        or props.get("secured_party")
+        or f"ext_{abs(hash(str(sorted(props.items()))))}"
+    )
+    return result
+
+
+def _resolve_ext_key(props: dict) -> str:
+    """Return the canonical node ID used as a dedup key and as the edge source/target ID."""
+    for field in _ENRICHMENT_PK_FIELDS:
+        val = props.get(field)
+        if val:
+            return str(val)
+    for field in ("url", "case_number", "secured_party"):
+        val = props.get(field)
+        if val:
+            return str(val)
+    return f"ext_{abs(hash(str(sorted(props.items()))))}"
+
+
+def get_enrichment_graph(deal_id: str) -> dict[str, Any]:
+    """
+    Return enrichment nodes and edges for a deal using a traversal-based query.
+
+    External enrichment nodes (NewsArticle, UccFiling, LegalAction, ExternalCompany)
+    don't carry deal_id as a property — they are reached by traversing from Company/
+    Individual nodes that do. This function queries by edge traversal so those nodes
+    appear in the result.
+
+    Edge types covered (Layer 5B): MENTIONED_IN, HAS_UCC_FILING, SUBJECT_OF,
+    AFFILIATED_WITH.
+
+    Node ID resolution: external nodes (e.g. NewsArticle) have no canonical PK
+    field recognised by the frontend (entity_id / filing_id / article_id etc.).
+    _enrich_ext_props() injects `node_id = url` (or best available identifier)
+    so that getNodeIdFromProps() in ExternalNetworkGraph.tsx can resolve edge
+    targets and all edges are rendered correctly.
+    """
+    rels_result = _run(
+        """
+        MATCH (c {deal_id: $deal_id})-[r:MENTIONED_IN|HAS_UCC_FILING|SUBJECT_OF|AFFILIATED_WITH]->(n)
+        RETURN labels(c) AS source_labels, properties(c) AS source_props,
+               type(r) AS rel_type,
+               labels(n) AS target_labels, properties(n) AS target_props
+        """,
+        {"deal_id": deal_id},
+    )
+    seen_nodes: dict[str, dict] = {}
+    relationships: list[dict] = []
+    for row in (rels_result or []):
+        sp = dict(row.get("source_props") or {})
+        tp = _enrich_ext_props(dict(row.get("target_props") or {}))
+        s_key = _resolve_ext_key(sp)
+        t_key = _resolve_ext_key(tp)
+        if s_key not in seen_nodes:
+            seen_nodes[s_key] = {"labels": row.get("source_labels", []), **sp}
+        if t_key not in seen_nodes:
+            seen_nodes[t_key] = {"labels": row.get("target_labels", []), **tp}
+        # Use the seen_nodes dicts (which carry the enriched node_id field) so
+        # that the frontend can resolve both source and target IDs from edge objects.
+        relationships.append({
+            "source": seen_nodes[s_key],
+            "type":   row.get("rel_type"),
+            "target": seen_nodes[t_key],
+        })
+    return {
+        "nodes": list(seen_nodes.values()),
         "relationships": relationships,
     }
 

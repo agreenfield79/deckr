@@ -58,45 +58,18 @@ def get_industry_node(naics_code: str, request: Request):
 
 @router.get("/external")
 def get_external_graph(request: Request, deal_id: str | None = None):
-    """Return Layer 5B enrichment nodes + edges (NewsArticle, LegalAction, Lien, etc.)."""
+    """Return Layer 5B enrichment nodes + edges via traversal-based query (Issue C fix).
+
+    External enrichment nodes (NewsArticle, UccFiling, LegalAction, ExternalCompany)
+    don't carry deal_id as a property, so the previous MATCH (n {deal_id}) approach
+    returned disconnected nodes. This endpoint uses get_enrichment_graph() which
+    traverses edges from deal-scoped Company/Individual anchors.
+    """
     if deal_id is None:
         return {"status": "error", "message": "deal_id required"}
     try:
-        from services.graph_service import _run
-        layer5b_labels = ["NewsArticle", "LegalAction", "Lien", "Address",
-                          "RegisteredAgent", "UccFiling", "Review"]
-        nodes_result = _run(
-            "MATCH (n) WHERE any(lbl IN labels(n) WHERE lbl IN $layer5b) "
-            "AND (n.deal_id = $deal_id OR n.deal_id IS NULL) "
-            "RETURN labels(n) AS labels, properties(n) AS props",
-            {"deal_id": deal_id, "layer5b": layer5b_labels}
-        )
-        rels_result = _run(
-            """
-            MATCH (a {deal_id: $deal_id})-[r]-(b)
-            WHERE any(lbl IN labels(b) WHERE lbl IN $layer5b)
-               OR any(lbl IN labels(a) WHERE lbl IN $layer5b)
-            RETURN properties(a) AS source, labels(a) AS source_labels,
-                   type(r) AS rel_type,
-                   properties(b) AS target, labels(b) AS target_labels
-            """,
-            {"deal_id": deal_id, "layer5b": layer5b_labels}
-        )
-        nodes = [
-            {"labels": row.get("labels", []), **dict(row.get("props") or {})}
-            for row in (nodes_result or [])
-        ]
-        relationships = [
-            {
-                "source": dict(row.get("source") or {}),
-                "source_labels": row.get("source_labels", []),
-                "type": row.get("rel_type"),
-                "target": dict(row.get("target") or {}),
-                "target_labels": row.get("target_labels", []),
-            }
-            for row in (rels_result or [])
-        ]
-        return {"deal_id": deal_id, "graph": {"nodes": nodes, "relationships": relationships}}
+        from services.graph_service import get_enrichment_graph
+        return {"deal_id": deal_id, "graph": get_enrichment_graph(deal_id)}
     except Exception as exc:
         logger.warning("get_external_graph failed: %s", exc)
         return {"status": "error", "message": str(exc)}

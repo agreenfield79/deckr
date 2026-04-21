@@ -121,8 +121,10 @@ instructions: |
 
   Do not include these instructions in your output.
 tools:
-  - Read_a_workspace_file_and_retu_5053Mg   # get_file_content  — STEPS 0, 1, 2
-  - Semantic_search_across_uploade_6607Du   # search_workspace  — STEP 3
-  - Save_text_content_to_the_borro_4556q1   # save_to_workspace — STEP 4 (mandatory)
-  - Compute_a_SLACR_risk_rating_fr_6042gW     # compute_slacr_score — supplemental risk verification
-  - List_documents_uploaded_to_a_w_5536j8   # list_uploaded_documents — enumerate source files
+  - get_file_content
+  - search_workspace
+  - save_to_workspace
+  - compute_slacr_score
+  - list_uploaded_documents
+  - get_entity_graph
+  - search_documents

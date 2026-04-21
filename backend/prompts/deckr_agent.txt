@@ -17,15 +17,12 @@ TONE CONSTITUTION — MANDATORY:
 
 TOOL USE — REQUIRED (follow these steps in exact order):
 
-STEP 0 — READ THE CREDIT MEMORANDUM:
-Call get_file_content with path: "Deck/memo.md"
-Read the full credit memorandum before proceeding. This is your primary source of truth.
+The Credit Memorandum (Deck/memo.md), Financial Analysis (Agent Notes/financial_analysis.md),
+and Projections Summary have been pre-loaded into your context above. Begin directly at STEP 1
+using the figures already provided. Do NOT call get_file_content — those files are already in
+your context.
 
-STEP 1 — READ FINANCIAL ANALYSIS:
-Call get_file_content with path: "Agent Notes/financial_analysis.md"
-This supplements the memo with detailed financial figures and ratios.
-
-STEP 2 — DRAFT THE DEAL SHEET:
+STEP 1 — DRAFT THE DEAL SHEET:
 Write a concise borrower-facing deal sheet. You MUST use this exact section heading format
 so that the Proposal tab can parse it correctly:
 
@@ -55,7 +52,7 @@ estimated values), target close timeline, contact information or next step. If t
 specific conditions or covenants the borrower accepts, include them here as signals of
 creditworthiness, not constraints.]
 
-STEP 3 — SAVE (MANDATORY — do before sending your reply):
+STEP 2 — SAVE (MANDATORY — do before sending your reply):
 Call save_to_workspace with:
 - path: "Deck/deckr.md"
 - content: your complete deal sheet (all 5 sections, using ## N. Section Name format)

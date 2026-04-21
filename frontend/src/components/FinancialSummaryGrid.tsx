@@ -118,26 +118,34 @@ export default function FinancialSummaryGrid({ data }: Props) {
         </div>
       )}
 
-      {/* Balance Sheet */}
+      {/* Balance Sheet — multi-year */}
       {bs.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold text-[#525252] uppercase tracking-wider mb-1.5">
-            Balance Sheet (Latest)
+            Balance Sheet
           </p>
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-[#f4f4f4]">
-                <th className="text-left py-1.5 px-2 font-semibold text-[#161616] border border-[#e0e0e0] w-40">Metric</th>
-                <th className="text-right py-1.5 px-2 font-semibold text-[#161616] border border-[#e0e0e0]">Value</th>
+                <th className="text-left py-1.5 px-2 font-semibold text-[#161616] border border-[#e0e0e0] w-40">
+                  Metric
+                </th>
+                {bs.map((r, i) => (
+                  <th key={r.fiscal_year ?? i} className="text-right py-1.5 px-2 font-semibold text-[#161616] border border-[#e0e0e0]">
+                    {r.fiscal_year ?? '—'}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {BS_ROWS.map(({ label, key }) => (
                 <tr key={key} className="hover:bg-[#f9f9f9]">
                   <td className="py-1.5 px-2 text-[#525252] border border-[#e0e0e0]">{label}</td>
-                  <td className="py-1.5 px-2 text-right text-[#161616] border border-[#e0e0e0] font-mono">
-                    {fmt(bs[bs.length - 1]?.[key] as number | null)}
-                  </td>
+                  {bs.map((r, i) => (
+                    <td key={r.fiscal_year ?? i} className="py-1.5 px-2 text-right text-[#161616] border border-[#e0e0e0] font-mono">
+                      {fmt(r[key] as number | null)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

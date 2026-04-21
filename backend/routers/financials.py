@@ -166,6 +166,7 @@ def get_summary(request: Request, deal_id: str | None = None):
 
             bs_rows = session.execute(
                 select(
+                    BalanceSheet.as_of_date,
                     BalanceSheet.total_assets,
                     BalanceSheet.total_liabilities,
                     BalanceSheet.total_equity,
@@ -207,6 +208,7 @@ def get_summary(request: Request, deal_id: str | None = None):
             ]
             balance = [
                 {
+                    "fiscal_year": r.as_of_date.year if r.as_of_date else None,
                     "total_assets": _f(r.total_assets),
                     "total_liabilities": _f(r.total_liabilities),
                     "total_equity": _f(r.total_equity),

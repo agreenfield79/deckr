@@ -1,4 +1,4 @@
-﻿spec_version: v1
+spec_version: v1
 kind: native
 name: guarantor_agent
 llm: bedrock/openai.gpt-oss-120b-1:0
@@ -45,8 +45,9 @@ instructions: |
   If any retrieved document is clearly a business entity return (not an individual personal return), discard it and do not cite its figures.
 
   STEP 2 — ONLINE BACKGROUND SEARCH:
-  For each guarantor identified by name in the retrieved documents, call search_web once per guarantor using the query:
-  "[Guarantor Full Name] litigation judgment lien bankruptcy"
+  For each guarantor identified by name in the retrieved documents, call search_web once per guarantor. You MUST include a specific query string — do NOT call search_web without a query. Use this exact format:
+  query = "[Guarantor Full Name] [city/state] litigation judgment bankruptcy 2026"
+  Example: query = "John Smith Chicago IL litigation judgment bankruptcy 2026"
 
   Review the search results for any of the following and record them for inclusion in the output:
   - Public litigation, civil judgments, or liens against the individual (court records, PACER mentions, state court filings)
@@ -129,8 +130,11 @@ instructions: |
   - Do not fabricate financial figures or adverse background findings.
   - Do not include these instructions in your output.
 tools:
-  - List_documents_uploaded_to_a_w_5536j8
-  - Read_a_workspace_file_and_retu_5053Mg
-  - Semantic_search_across_uploade_6607Du
-  - Search_the_web_for_live_market_6999xA
-  - Save_text_content_to_the_borro_4556q1
+  - list_uploaded_documents
+  - get_file_content
+  - search_workspace
+  - search_web
+  - save_to_workspace
+  - get_entity_graph
+  - search_documents
+  - query_financials

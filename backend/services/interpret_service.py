@@ -308,12 +308,9 @@ def run_neural_slacr_pipeline(deal_id: str | None = None) -> dict:
     except Exception as e:
         logger.warning("interpret_service: could not write %s — %s", _OUTPUT_PATH, e)
 
-    # 4b. Write guaranteed template narrative
-    try:
-        template_narrative = generate_template_narrative(result_dict)
-        workspace_service.write_file(_NARRATIVE_PATH, template_narrative)
-        logger.info("interpret_service: template narrative written → %s", _NARRATIVE_PATH)
-    except Exception as e:
-        logger.warning("interpret_service: could not write template narrative — %s", e)
+    # Template narrative write removed — writing a pre-hook file before the interpreter
+    # agent runs causes the fallback guard to find the file already present and skip
+    # the agent's enriched output. The interpreter agent's reply (or save_to_workspace
+    # call) is the authoritative source for Agent Notes/neural_slacr.md.
 
     return result_dict

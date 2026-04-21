@@ -57,7 +57,7 @@ function nodeColor(labels: string[]): string {
 }
 
 function nodeLabel(node: GraphNode): string {
-  return (
+  const raw = (
     (node.title as string) ||
     (node.event_type as string) ||
     (node.name as string) ||
@@ -65,6 +65,7 @@ function nodeLabel(node: GraphNode): string {
     (node.labels as string[])?.[0] ||
     'Node'
   )
+  return raw.length > 24 ? raw.slice(0, 22) + '…' : raw
 }
 
 function buildElements(graph: GraphResponse) {
@@ -136,10 +137,42 @@ export default function ExternalNetworkGraph() {
     if (next && !loaded) load()
   }
 
-  const layout = { name: 'cose', animate: true, nodeRepulsion: 4096, idealEdgeLength: 80 }
+  const layout = { name: 'cose', animate: true, nodeRepulsion: 8000, idealEdgeLength: 120, padding: 30 }
   const stylesheet = [
-    { selector: 'node', style: { 'background-color': 'data(color)', label: 'data(label)', color: '#fff', 'font-size': 9, width: 34, height: 34, 'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'wrap', 'text-max-width': 60 } as Record<string, unknown> },
-    { selector: 'edge', style: { width: 1.5, 'line-color': '#c6c6c6', 'target-arrow-color': '#c6c6c6', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', label: 'data(label)', 'font-size': 8, color: '#8d8d8d' } as Record<string, unknown> },
+    {
+      selector: 'node',
+      style: {
+        'background-color': 'data(color)',
+        label: 'data(label)',
+        color: '#161616',
+        'font-size': 9,
+        width: 44,
+        height: 44,
+        'text-valign': 'bottom',
+        'text-halign': 'center',
+        'text-wrap': 'wrap',
+        'text-max-width': 90,
+        'text-margin-y': 4,
+        'border-width': 2,
+        'border-color': '#ffffff',
+      } as Record<string, unknown>,
+    },
+    {
+      selector: 'edge',
+      style: {
+        width: 1.5,
+        'line-color': '#c6c6c6',
+        'target-arrow-color': '#c6c6c6',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        label: 'data(label)',
+        'font-size': 8,
+        color: '#8d8d8d',
+        'text-background-color': '#ffffff',
+        'text-background-opacity': 0.8,
+        'text-background-padding': '2px',
+      } as Record<string, unknown>,
+    },
   ]
 
   const nodeCount = graph?.nodes.length ?? 0

@@ -118,6 +118,12 @@ instructions: |
 
   Do not include these instructions in your output.
 tools:
-  # Other tool IDs are stable across sessions; verify if tools were re-imported.
-  - Semantic_search_across_uploade_6607Du
-  - Compute_a_SLACR_risk_rating_fr_6042gW
+  - search_workspace
+  - compute_slacr_score
+  - get_file_content
+  - list_uploaded_documents
+  - save_to_workspace
+  - get_entity_graph
+  - search_documents
+  - query_financials
+  - log_pipeline_run

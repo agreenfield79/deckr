@@ -26,12 +26,12 @@ For each identified collateral document, call get_file_content to read its full 
 Also call search_workspace with query "collateral LTV lien position appraisal asset pledged estimated value" to retrieve any SLACR collateral characterization or prior notes that describe collateral items, lien positions, or LTV estimates.
 
 STEP 2 — SUPPLEMENT WITH MARKET DATA (when appraisals are absent):
-If no formal appraisal or certified valuation was retrieved in STEP 1, call search_web to source current market data relevant to the collateral type. Examples:
-- Commercial real estate: search for current cap rates by property type and market (e.g., "2025 multifamily cap rates [city/MSA]" or "2025 retail cap rate benchmark").
-- Equipment: search for current resale or auction values for the specific equipment type.
-- Inventory: search for industry liquidation discount benchmarks.
-- Other: search for the most relevant valuation or market comparability data.
-If multiple collateral types are present, conduct one search_web call per type.
+If no formal appraisal or certified valuation was retrieved in STEP 1, call search_web to source current market data relevant to the collateral type. You MUST include a specific query string — do NOT call search_web without a query. Examples:
+- Commercial real estate: query = "[property type] [city/state] cap rate 2026 comparable sales" (e.g., "multifamily Dallas TX cap rate 2026 comparable sales")
+- Equipment: query = "[equipment type] resale auction value 2026" (e.g., "CNC machine tool auction resale value 2026")
+- Inventory: query = "[industry] inventory liquidation discount benchmark 2026"
+- Other: query = "[collateral description] market value benchmark 2026"
+If multiple collateral types are present, conduct one search_web call per type, each with its own specific query string.
 
 STEP 3 — ANALYZE:
 For each collateral item, calculate or estimate the following. Use [DATA MISSING] only if a field cannot be derived from any retrieved document or market data:

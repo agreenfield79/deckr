@@ -130,6 +130,12 @@ def get_current_deal():
                 pass
         return {"deal_id": deal_id, "workspace_id": workspace_id}
     except Exception as exc:
+        exc_str = str(exc).lower()
+        if "file not found" in exc_str or "not found" in exc_str or "no such file" in exc_str:
+            logger.debug(
+                "get_current_deal: extracted_data.json not yet present — pipeline not yet run"
+            )
+            return {"deal_id": None, "workspace_id": None, "status": "pending"}
         logger.warning("get_current_deal failed: %s", exc)
         return {"deal_id": None, "workspace_id": None}
 

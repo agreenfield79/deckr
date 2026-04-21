@@ -5,8 +5,6 @@ import MarkdownEditor from '../editor/MarkdownEditor'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TreeNode } from '../types/workspace'
 import { getPipelineHistory, getCurrentDeal } from '../api/pipelineRuns'
-import AgentWordCloud from '../components/AgentWordCloud'
-
 const RESEARCH_FOLDERS = ['Research', 'Industry', 'Management']
 
 function flatFiles(nodes: TreeNode[], prefix = ''): TreeNode[] {
@@ -215,10 +213,6 @@ export default function ResearchTab() {
 
       {/* Editor area */}
       <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
-        {/* Agent Word Cloud — above the file editor */}
-        <div className="shrink-0 px-2 pt-2">
-          <AgentWordCloud />
-        </div>
         <div className="flex-1 min-h-0 overflow-hidden">
         {loadingFile ? (
           <div className="flex items-center justify-center h-full">

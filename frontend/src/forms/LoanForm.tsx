@@ -1,10 +1,25 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { Upload } from 'lucide-react'
 import FormField from './FormField'
 import { getLoan, saveLoan } from '../api/forms'
 import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
 import { emptyLoan } from '../types/forms'
 import type { LoanRequest, Guarantor } from '../types/forms'
+
+const NVIDIA_LOAN: LoanRequest = {
+  loan_amount: 100000000,
+  loan_type: 'Term',
+  interest_rate: 6.5,
+  loan_purpose:
+    'AI expansion in data center — procurement and deployment of next-generation GPU compute infrastructure to support accelerated AI model training and inference workloads across NVIDIA\'s internal research and cloud services divisions.',
+  repayment_source: 'Operating cash flow',
+  term_months: 36,
+  amortization_months: 36,
+  desired_timing: 'Close by quarter end',
+  collateral_offered: ['Data center equipment — appraised value $200,000,000'],
+  guarantors: [],
+}
 
 const LOAN_TYPE_OPTIONS = [
   { value: 'Term', label: 'Term Loan' },
@@ -26,6 +41,7 @@ export default function LoanForm() {
   const [submitting, setSubmitting] = useState(false)
   const { refreshTree } = useProject()
   const toast = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -37,6 +53,28 @@ export default function LoanForm() {
 
   const set = <K extends keyof LoanRequest>(key: K, value: LoanRequest[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
+
+  const loadSample = () => {
+    setForm({ ...emptyLoan(), ...NVIDIA_LOAN })
+    toast.success('NVIDIA loan sample loaded — review and save to confirm')
+  }
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target?.result as string)
+        setForm({ ...emptyLoan(), ...parsed })
+        toast.success(`Imported from ${file.name}`)
+      } catch {
+        toast.error('Failed to parse JSON — make sure the file is valid loan request JSON')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -171,13 +209,37 @@ export default function LoanForm() {
       </section>
 
       {/* Submit */}
-      <div className="pt-2">
+      <div className="pt-2 flex items-center gap-3 flex-wrap">
         <button
           type="submit"
           disabled={submitting}
           className="px-5 py-2 bg-[#0f62fe] text-white text-sm font-medium rounded hover:bg-[#0353e9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? 'Saving…' : 'Save Loan Request'}
+        </button>
+
+        <button
+          type="button"
+          onClick={loadSample}
+          className="px-4 py-2 bg-white border border-[#0f62fe] text-[#0f62fe] text-sm font-medium rounded hover:bg-[#edf4ff] transition-colors"
+        >
+          Load NVIDIA Sample
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 px-4 py-2 bg-white border border-[#8d8d8d] text-[#525252] text-sm font-medium rounded hover:bg-[#f4f4f4] transition-colors"
+        >
+          <Upload size={14} />
+          Import from JSON
         </button>
       </div>
     </form>

@@ -197,6 +197,7 @@ instructions: |
 
   Return ONLY the complete JSON object populated with the values found in the document context. Do not include markdown fences, commentary, explanation, or any text before or after the JSON object.
 tools:
-  - List_documents_uploaded_to_a_w_5536j8
-  - Read_a_workspace_file_and_retu_5053Mg
-  - Save_text_content_to_the_borro_4556q1
+  - list_uploaded_documents
+  - get_file_content
+  - save_to_workspace
+  - store_extraction

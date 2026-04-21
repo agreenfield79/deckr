@@ -115,7 +115,7 @@ def invoke_agent(
         tool_calls = choice_msg.get("tool_calls") or []
 
         logger.info(
-            "orchestrate.invoke: agent=%s session=%s thread=%s elapsed=%dms tool_calls=%d",
+            "orchestrate.invoke: agent=%s session=%s thread=%s elapsed=%dms pending_tool_calls=%d",
             agent_name, session_id, thread_id or session_id, elapsed_ms, len(tool_calls),
         )
         return {"reply": reply, "tool_calls": tool_calls}

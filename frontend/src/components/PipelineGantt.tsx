@@ -37,7 +37,7 @@ interface GanttBarProps {
 }
 
 function GanttBars({ run }: GanttBarProps) {
-  if (!run.stages.length) return <p className="text-[10px] text-[#a8a8a8] italic px-3 py-2">No stage data.</p>
+  if (!run.stages?.length) return <p className="text-[10px] text-[#a8a8a8] italic px-3 py-2">No stage data.</p>
 
   const totalMs = run.total_elapsed_ms || run.stages.reduce((s, st) => s + (st.elapsed_ms || 0), 0) || 1
   const barHeight = 18
@@ -130,9 +130,12 @@ export default function PipelineGantt() {
 
   return (
     <div className="mt-4 border border-[#e0e0e0] rounded bg-white overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors cursor-pointer"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
       >
         <span className="flex items-center gap-2">
           <BarChart2 size={13} className="text-[#0f62fe]" />
@@ -155,7 +158,7 @@ export default function PipelineGantt() {
           )}
           <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-[#e0e0e0]">

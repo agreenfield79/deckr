@@ -317,6 +317,16 @@ def _project_year(
 
     # DSCR = (EBITDA − CapEx) / debt_service
     dscr = (ebitda - capex) / debt_service if debt_service > 0 else None
+    # Cap DSCR at 20.0x — values above this indicate missing/default loan terms
+    # (e.g. large-cap borrower vs. $2.5M default ADS) and would skew ML feature inputs.
+    _DSCR_CAP = 20.0
+    if dscr is not None and dscr > _DSCR_CAP:
+        logger.warning(
+            "projections: DSCR %.1fx exceeds cap of %.1fx — capping for feature store "
+            "(deal likely using default loan terms; check loan_terms SQL row)",
+            dscr, _DSCR_CAP,
+        )
+        dscr = _DSCR_CAP
     funded_debt_to_ebitda = funded_debt / ebitda if ebitda > 0 else None
 
     return {
@@ -680,7 +690,44 @@ async def run_projections(
     except Exception as exc:
         logger.warning("[projections] summary md write failed: %s", exc)
 
+    # ── 9b. Persist projection assumptions first (D-3: fail-silent) ────────────
+    # Must run before step 9 so assumptions_id is available to link to projection rows.
+    assumptions_ids: dict[str, str | None] = {"base": None, "upside": None, "stress": None}
+    for scenario in ("base", "upside", "stress"):
+        scen_assump = assumptions[scenario]
+        try:
+            aid = sql_service.insert_projection_assumptions(deal_id, run_id, {
+                "scenario":                scenario,
+                "revenue_growth_rate":     scen_assump.get("cagr"),
+                "ebitda_margin_assumption": scen_assump.get("ebitda_margin"),
+                "capex_pct_revenue":       scen_assump.get("capex_pct"),
+                "interest_rate_assumption": None,
+                "debt_paydown_rate":       None,
+                "macro_scenario_tag":      scenario,
+            })
+            assumptions_ids[scenario] = aid
+        except Exception as _ae:
+            logger.warning("[projections] insert_projection_assumptions(%s) failed: %s", scenario, _ae)
+
     # ── 9. Persist to SQL (D-3: fail-silent) ────────────────────────────────
+    # DELETE-before-insert: remove any existing rows for this entity+run to
+    # prevent accumulation across repeated projections calls (Issue B fix).
+    # Target schema UNIQUE key is (entity_id, pipeline_run_id, scenario, projection_year).
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Projection
+        from sqlalchemy import delete as _delete
+        with next(get_sql_session()) as _del_session:
+            _del_session.execute(
+                _delete(Projection).where(
+                    Projection.entity_id == entity_id,
+                    Projection.pipeline_run_id == run_id,
+                )
+            )
+            _del_session.commit()
+    except Exception as _del_exc:
+        logger.warning("[projections] DELETE-before-insert failed — %s", _del_exc)
+
     proj_rows_written = 0
     cov_rows_written  = 0
     for scenario in ("base", "upside", "stress"):
@@ -690,6 +737,7 @@ async def run_projections(
             sql_row["entity_id"]       = entity_id
             sql_row["deal_id"]         = deal_id
             sql_row["pipeline_run_id"] = run_id
+            sql_row["assumptions_id"]  = assumptions_ids.get(scenario)
             if sql_service.insert_projection(sql_row):
                 proj_rows_written += 1
 
@@ -701,6 +749,45 @@ async def run_projections(
         "[projections] SQL: %d projection rows, %d covenant rows written",
         proj_rows_written, cov_rows_written,
     )
+
+    # ── 9c. Persist sensitivity analyses — stress vs base shocks (D-3) ──────
+    # shock_magnitude_pct is stored as a decimal fraction (e.g. -0.20 = 20% shock),
+    # NOT as a percentage. y1_shock is already -0.20; margin delta is already fractional.
+    try:
+        base_last  = all_projections["base"][-1]  if all_projections["base"]  else {}
+        stress_last = all_projections["stress"][-1] if all_projections["stress"] else {}
+        if base_last and stress_last:
+            # Revenue shock row — y1_shock is stored as-is (e.g. -0.20)
+            sql_service.insert_sensitivity_analysis(deal_id, run_id, {
+                "variable_shocked":   "revenue_growth",
+                "shock_magnitude_pct": assumptions["stress"].get("y1_shock", -0.20),
+                "resulting_dscr":     stress_last.get("dscr"),
+                "resulting_leverage": stress_last.get("funded_debt_to_ebitda"),
+                "resulting_fcf":      stress_last.get("free_cash_flow"),
+                "covenant_breach_year": next(
+                    (r["projection_year"] for r in all_covenants["stress"]
+                     if r.get("covenant_type") == "dscr" and r.get("is_breach_year")),
+                    None,
+                ),
+            })
+            # EBITDA margin compression row — delta is already fractional (e.g. -0.025)
+            margin_shock = round(
+                assumptions["stress"]["ebitda_margin"] - assumptions["base"]["ebitda_margin"], 6
+            )
+            sql_service.insert_sensitivity_analysis(deal_id, run_id, {
+                "variable_shocked":    "ebitda_margin",
+                "shock_magnitude_pct": margin_shock,
+                "resulting_dscr":      stress_last.get("dscr"),
+                "resulting_leverage":  stress_last.get("funded_debt_to_ebitda"),
+                "resulting_fcf":       stress_last.get("free_cash_flow"),
+                "covenant_breach_year": next(
+                    (r["projection_year"] for r in all_covenants["stress"]
+                     if r.get("covenant_type") == "dscr" and r.get("is_breach_year")),
+                    None,
+                ),
+            })
+    except Exception as _se:
+        logger.warning("[projections] insert_sensitivity_analysis failed: %s", _se)
 
     # ── 10. Build summary for caller ────────────────────────────────────────
     stress_breach = next(
