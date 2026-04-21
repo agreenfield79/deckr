@@ -361,12 +361,16 @@ def _test_covenants(
     fcc           = (ebitda - capex) / debt_service if debt_service > 0 else 0.0
     liquidity     = ending_cash + revolver
 
-    # Override minimum_liquidity threshold from covenant_definitions if present
+    # Override minimum_liquidity threshold from covenants table if a row exists
     min_liq_threshold = _DEFAULT_MIN_LIQUIDITY
-    for cd in (loan_terms.get("covenant_definitions") or []):
-        if cd.get("metric") == "minimum_liquidity":
-            min_liq_threshold = float(cd.get("threshold", _DEFAULT_MIN_LIQUIDITY))
-            break
+    try:
+        from services.sql_service import get_minimum_liquidity_threshold
+        _deal_id = loan_terms.get("deal_id") or deal_id
+        _override = get_minimum_liquidity_threshold(_deal_id)
+        if _override is not None:
+            min_liq_threshold = _override
+    except Exception:
+        pass  # fall back to default — non-fatal
 
     computed_values = {
         "dscr":                 dscr,

@@ -191,7 +191,7 @@ def _sql_seed_atomic(
                     next_year_ebitda_margin=_safe_float(raw_guidance.get("next_year_ebitda_margin")),
                     growth_drivers=raw_guidance.get("growth_drivers"),
                     risk_factors=raw_guidance.get("risk_factors"),
-                    source_text=raw_guidance.get("source_text"),
+                    source=raw_guidance.get("source"),
                 ))
 
     except ExtractionSeedError:
@@ -299,7 +299,7 @@ def seed(workspace_root: str, deal_id: str | None = None,
         errors.append("SQL seed returned no entity_id — IP1 will fail gate check")
 
     # ── 8. MongoDB — Document Index ───────────────────────────────────────────
-    mongo_service.upsert_workspace(workspace_id, workspace_root, borrower_name)
+    # 3C.2: upsert_workspace (mongo) removed — SQL workspaces table is authoritative
     for upload_info in data.get("uploaded_documents", []):
         mongo_service.index_document(
             workspace_id=workspace_id,
@@ -313,16 +313,66 @@ def seed(workspace_root: str, deal_id: str | None = None,
 
     # ── 9. Neo4j — 5A Anchor Nodes ────────────────────────────────────────────
     if entity_id:
+        company_data = data.get("company", {})
+        if isinstance(company_data, str):
+            company_data = {}
         ok = graph_service.write_company_node(
             deal_id=deal_id,
             entity_id=entity_id,
             legal_name=borrower_name,
             naics_code=naics_code,
+            role="borrower",
+            dba=company_data.get("dba"),
+            formation_date=company_data.get("formation_date"),
+            status=company_data.get("status"),
         )
         if ok:
             neo4j_nodes += 1
         if naics_code:
-            graph_service.write_operates_in_relationship(entity_id, naics_code)
+            graph_service.write_operates_in_relationship(
+                entity_id, naics_code, primary_flag=True,
+            )
+
+    # Loan node + REQUESTS relationship (Phase 3D.2 / 3D.7-D2)
+    loan_terms_data = sql_service.get_loan_terms(deal_id)
+    loan_terms_id = (loan_terms_data or {}).get("loan_terms_id", "")
+    if entity_id and loan_terms_id:
+        raw_lt = data.get("loan_terms", {})
+        if isinstance(raw_lt, list):
+            raw_lt = raw_lt[0] if raw_lt else {}
+        ok_loan = graph_service.write_loan_node(
+            deal_id=deal_id,
+            loan_terms_id=loan_terms_id,
+            loan_type=raw_lt.get("loan_type"),
+            term_months=_safe_int(raw_lt.get("term_months")),
+            rate_type=raw_lt.get("rate_type"),
+            status=raw_lt.get("status") or "pending",
+        )
+        if ok_loan:
+            neo4j_nodes += 1
+        graph_service.write_requests_relationship(
+            entity_id=entity_id,
+            loan_terms_id=loan_terms_id,
+        )
+
+    # Document nodes — one per uploaded file (Phase 3D.2)
+    for upload_info in data.get("uploaded_documents", []):
+        doc_id = upload_info.get("document_id", "")
+        if not doc_id:
+            continue
+        graph_service.write_document_node(
+            document_id=doc_id,
+            deal_id=deal_id,
+            file_name=upload_info.get("file_name", ""),
+            document_type=upload_info.get("document_type"),
+        )
+        neo4j_nodes += 1
+        if entity_id:
+            graph_service.write_appears_in_edge(
+                entity_id=entity_id,
+                document_id=doc_id,
+                role="borrower",
+            )
 
     # Guarantor nodes
     for g in data.get("guarantors", []):
@@ -336,8 +386,15 @@ def seed(workspace_root: str, deal_id: str | None = None,
                 deal_id=deal_id,
                 entity_id=g_entity_id,
                 legal_name=g.get("name", ""),
+                role="guarantor",
             )
             neo4j_nodes += 1
+            if loan_terms_id:
+                graph_service.write_guarantees_relationship(
+                    g_entity_id, loan_terms_id,
+                    guarantee_type=g.get("guarantee_type"),
+                    coverage_pct=_safe_float(g.get("coverage_pct")),
+                )
 
     # ── IP1 Gate Check ────────────────────────────────────────────────────────
     db_count = sql_service.count_financial_rows(entity_id or "")
@@ -490,7 +547,6 @@ def _map_loan_terms(d: dict) -> dict:
         "amortization_years": _safe_int(d.get("amortization_years")),
         "term_months": _safe_int(d.get("term_months")),
         "proposed_annual_debt_service": _safe_float(d.get("proposed_annual_debt_service")),
-        "covenant_definitions": d.get("covenant_definitions"),
         "revolver_availability": _safe_float(d.get("revolver_availability")),
     }.items() if v is not None}
 

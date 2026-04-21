@@ -229,6 +229,38 @@ def insert_cash_flow(entity_id: str, fiscal_year: int, data: dict) -> bool:
         return False
 
 
+def update_collateral_appraisal(collateral_id: str,
+                                appraised_value: float | None = None,
+                                appraiser_name: str | None = None,
+                                appraisal_date: str | None = None) -> bool:
+    """
+    Persist appraised_value to SQL collateral table (Phase 3D.1).
+    Called from agent_service._ip2_collateral() instead of writing to Neo4j.
+    """
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Collateral
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            row = session.execute(
+                select(Collateral).where(Collateral.collateral_id == collateral_id).limit(1)
+            ).scalar_one_or_none()
+            if not row:
+                logger.warning("update_collateral_appraisal: collateral_id=%s not found", collateral_id)
+                return False
+            if appraised_value is not None:
+                row.appraised_value = appraised_value
+            if appraiser_name is not None and hasattr(row, "appraiser_name"):
+                row.appraiser_name = appraiser_name
+            if appraisal_date is not None and hasattr(row, "appraisal_date"):
+                row.appraisal_date = appraisal_date
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("update_collateral_appraisal failed: %s", exc)
+        return False
+
+
 def insert_loan_terms(deal_id: str, data: dict) -> bool:
     try:
         from services.db_factory import get_sql_session
@@ -584,6 +616,7 @@ def get_loan_terms(deal_id: str) -> dict | None:
             return None
         return {
             "loan_terms_id": str(row.loan_terms_id),
+            "deal_id": deal_id,
             "loan_amount": float(row.loan_amount or 0),
             "interest_rate": float(row.interest_rate or 0.0675),
             "rate_type": row.rate_type or "fixed",
@@ -591,10 +624,28 @@ def get_loan_terms(deal_id: str) -> dict | None:
             "term_months": int(row.term_months or 84),
             "proposed_annual_debt_service": float(row.proposed_annual_debt_service or 0),
             "revolver_availability": float(row.revolver_availability or 0),
-            "covenant_definitions": row.covenant_definitions or [],
         }
     except Exception as exc:
         logger.warning("get_loan_terms failed: %s", exc)
+        return None
+
+
+def get_minimum_liquidity_threshold(deal_id: str) -> float | None:
+    """Return the minimum_liquidity threshold_value from the covenants table, or None."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Covenant
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            row = session.execute(
+                select(Covenant.threshold_value).where(
+                    Covenant.deal_id == deal_id,
+                    Covenant.covenant_type == "minimum_liquidity",
+                ).limit(1)
+            ).scalar_one_or_none()
+        return float(row) if row is not None else None
+    except Exception as exc:
+        logger.warning("get_minimum_liquidity_threshold failed: %s", exc)
         return None
 
 
@@ -665,7 +716,7 @@ def insert_management_guidance(entity_id: str, data: dict) -> bool:
                 next_year_ebitda_margin=_safe_float(data.get("next_year_ebitda_margin")),
                 growth_drivers=data.get("growth_drivers") or [],
                 risk_factors=data.get("risk_factors") or [],
-                source_text=data.get("source_text"),
+                source=data.get("source"),
             )
             session.add(row)
             session.commit()
@@ -780,4 +831,319 @@ def insert_covenant_compliance_projection(row: dict) -> bool:
         return True
     except Exception as exc:
         logger.warning("insert_covenant_compliance_projection failed: %s", exc)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# New table service functions — Phase 3B additions
+# ---------------------------------------------------------------------------
+
+def insert_contact(entity_id: str, deal_id: str, data: dict) -> bool:
+    """Insert a contact row for a deal entity."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Contact
+        with next(get_sql_session()) as session:
+            session.add(Contact(
+                contact_id=str(uuid4()),
+                entity_id=entity_id,
+                deal_id=deal_id,
+                name=data["name"],
+                title=data.get("title"),
+                email=data.get("email"),
+                phone=data.get("phone"),
+                contact_type=data["contact_type"],
+                created_at=_now(),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("insert_contact failed: %s", exc)
+        return False
+
+
+def upsert_benchmark(data: dict) -> bool:
+    """Insert or update a benchmark row (naics_code + metric_name + as_of_year are unique)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Benchmark
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            existing = session.execute(
+                select(Benchmark).where(
+                    Benchmark.naics_code == data["naics_code"],
+                    Benchmark.metric_name == data["metric_name"],
+                    Benchmark.as_of_year == data.get("as_of_year"),
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.percentile_25 = data.get("percentile_25")
+                existing.percentile_50 = data.get("percentile_50")
+                existing.percentile_75 = data.get("percentile_75")
+                existing.source = data.get("source")
+            else:
+                session.add(Benchmark(
+                    benchmark_id=str(uuid4()),
+                    created_at=_now(),
+                    **data,
+                ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("upsert_benchmark failed: %s", exc)
+        return False
+
+
+def insert_guarantee(deal_id: str, data: dict) -> bool:
+    """Insert a guarantee row. Populates personal_net_worth and liquid_assets from PFS if present."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Guarantee, PersonalFinancialStatement
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            guarantor_id = data.get("guarantor_entity_id")
+            # Pull summary figures from PFS if not explicitly provided
+            pnw = data.get("personal_net_worth")
+            liq = data.get("liquid_assets")
+            if (pnw is None or liq is None) and guarantor_id:
+                pfs = session.execute(
+                    select(PersonalFinancialStatement)
+                    .where(PersonalFinancialStatement.entity_id == guarantor_id)
+                    .limit(1)
+                ).scalar_one_or_none()
+                if pfs:
+                    if pnw is None:
+                        pnw = float(pfs.net_worth) if pfs.net_worth else None
+                    if liq is None:
+                        cash = float(pfs.cash_savings or 0)
+                        ret  = float(pfs.retirement_accounts or 0)
+                        liq  = cash + ret if (pfs.cash_savings or pfs.retirement_accounts) else None
+            session.add(Guarantee(
+                guarantee_id=str(uuid4()),
+                deal_id=deal_id,
+                guarantor_entity_id=guarantor_id,
+                loan_terms_id=data.get("loan_terms_id"),
+                guarantee_type=data["guarantee_type"],
+                coverage_amount=_safe_float(data.get("coverage_amount")),
+                coverage_pct=_safe_float(data.get("coverage_pct")),
+                personal_net_worth=pnw,
+                liquid_assets=liq,
+                executed_at=data.get("executed_at"),
+                expires_at=data.get("expires_at"),
+                created_at=_now(),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("insert_guarantee failed: %s", exc)
+        return False
+
+
+def insert_projection_assumptions(deal_id: str, pipeline_run_id: str, data: dict) -> str | None:
+    """Insert a projection_assumptions row; returns the new assumptions_id."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import ProjectionAssumptions
+        aid = str(uuid4())
+        with next(get_sql_session()) as session:
+            session.add(ProjectionAssumptions(
+                assumptions_id=aid,
+                deal_id=deal_id,
+                pipeline_run_id=pipeline_run_id,
+                scenario=data["scenario"],
+                revenue_growth_rate=_safe_float(data.get("revenue_growth_rate")),
+                ebitda_margin_assumption=_safe_float(data.get("ebitda_margin_assumption")),
+                capex_pct_revenue=_safe_float(data.get("capex_pct_revenue")),
+                interest_rate_assumption=_safe_float(data.get("interest_rate_assumption")),
+                debt_paydown_rate=_safe_float(data.get("debt_paydown_rate")),
+                macro_scenario_tag=data.get("macro_scenario_tag"),
+                model_id=data.get("model_id"),
+                created_at=_now(),
+            ))
+            session.commit()
+        return aid
+    except Exception as exc:
+        logger.warning("insert_projection_assumptions failed: %s", exc)
+        return None
+
+
+def insert_sensitivity_analysis(deal_id: str, pipeline_run_id: str, data: dict) -> bool:
+    """Insert a sensitivity_analyses row."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import SensitivityAnalysis
+        with next(get_sql_session()) as session:
+            session.add(SensitivityAnalysis(
+                sensitivity_id=str(uuid4()),
+                deal_id=deal_id,
+                pipeline_run_id=pipeline_run_id,
+                variable_shocked=data["variable_shocked"],
+                shock_magnitude_pct=data["shock_magnitude_pct"],
+                resulting_dscr=_safe_float(data.get("resulting_dscr")),
+                resulting_leverage=_safe_float(data.get("resulting_leverage")),
+                resulting_fcf=_safe_float(data.get("resulting_fcf")),
+                covenant_breach_year=data.get("covenant_breach_year"),
+                computed_at=_now(),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("insert_sensitivity_analysis failed: %s", exc)
+        return False
+
+
+def upsert_model_version(data: dict) -> str | None:
+    """Insert or update a model_versions row; returns the model_id."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import ModelVersion
+        from sqlalchemy import select
+        with next(get_sql_session()) as session:
+            existing = session.execute(
+                select(ModelVersion).where(
+                    ModelVersion.model_name == data["model_name"],
+                    ModelVersion.version == data["version"],
+                )
+            ).scalar_one_or_none()
+            if existing:
+                return str(existing.model_id)
+            mid = str(uuid4())
+            session.add(ModelVersion(
+                model_id=mid,
+                model_name=data["model_name"],
+                version=data["version"],
+                architecture=data.get("architecture"),
+                deployed_at=data.get("deployed_at") or _now(),
+                training_dataset_hash=data.get("training_dataset_hash"),
+                validation_auc=_safe_float(data.get("validation_auc")),
+                validation_ks_statistic=_safe_float(data.get("validation_ks_statistic")),
+                calibration_brier_score=_safe_float(data.get("calibration_brier_score")),
+                feature_names=data.get("feature_names"),
+                created_at=_now(),
+            ))
+            session.commit()
+        return mid
+    except Exception as exc:
+        logger.warning("upsert_model_version failed: %s", exc)
+        return None
+
+
+def insert_feature_snapshot(deal_id: str, pipeline_run_id: str, data: dict) -> bool:
+    """Insert a feature_store row after a SLACR scoring run (IP3)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import FeatureStore
+        with next(get_sql_session()) as session:
+            session.add(FeatureStore(
+                feature_snapshot_id=str(uuid4()),
+                deal_id=deal_id,
+                pipeline_run_id=pipeline_run_id,
+                computed_at=_now(),
+                dscr_t0=_safe_float(data.get("dscr_t0")),
+                dscr_t1=_safe_float(data.get("dscr_t1")),
+                leverage_t0=_safe_float(data.get("leverage_t0")),
+                ebitda_margin_t0=_safe_float(data.get("ebitda_margin_t0")),
+                current_ratio_t0=_safe_float(data.get("current_ratio_t0")),
+                industry_risk_tier=data.get("industry_risk_tier"),
+                collateral_coverage=_safe_float(data.get("collateral_coverage")),
+                guarantor_net_worth=_safe_float(data.get("guarantor_net_worth")),
+                naics_code=data.get("naics_code"),
+                years_in_business=data.get("years_in_business"),
+                revenue_cagr_3yr=_safe_float(data.get("revenue_cagr_3yr")),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("insert_feature_snapshot failed: %s", exc)
+        return False
+
+
+def insert_model_outcome(deal_id: str, data: dict) -> bool:
+    """Insert a model_outcomes row (called when real loan outcome data becomes available)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import ModelOutcome
+        with next(get_sql_session()) as session:
+            session.add(ModelOutcome(
+                outcome_id=str(uuid4()),
+                deal_id=deal_id,
+                loan_terms_id=data.get("loan_terms_id"),
+                predicted_rating=data["predicted_rating"],
+                predicted_at=data.get("predicted_at") or _now(),
+                actual_outcome=data.get("actual_outcome"),
+                outcome_date=data.get("outcome_date"),
+                loss_given_default=_safe_float(data.get("loss_given_default")),
+                recorded_at=_now(),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("insert_model_outcome failed: %s", exc)
+        return False
+
+
+# Auth stubs — not wired to any endpoint until Phase 10C auth activation
+def insert_user(data: dict) -> str | None:
+    """Stub — insert a user row (Phase 10C gate)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import User
+        uid = str(uuid4())
+        with next(get_sql_session()) as session:
+            session.add(User(
+                user_id=uid,
+                email=data["email"],
+                role=data["role"],
+                institution_id=data.get("institution_id"),
+                password_hash=data.get("password_hash"),
+                created_at=_now(),
+                is_active=True,
+            ))
+            session.commit()
+        return uid
+    except Exception as exc:
+        logger.warning("insert_user failed: %s", exc)
+        return None
+
+
+def create_session(user_id: str, data: dict) -> str | None:
+    """Stub — create an auth session row (Phase 10C gate)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import Session as AuthSession
+        sid = str(uuid4())
+        with next(get_sql_session()) as session:
+            session.add(AuthSession(
+                session_id=sid,
+                user_id=user_id,
+                issued_at=_now(),
+                expires_at=data["expires_at"],
+                refresh_token_hash=data.get("refresh_token_hash"),
+                ip_address=data.get("ip_address"),
+            ))
+            session.commit()
+        return sid
+    except Exception as exc:
+        logger.warning("create_session failed: %s", exc)
+        return None
+
+
+def grant_deal_access(user_id: str, deal_id: str, access_level: str, granted_by: str) -> bool:
+    """Stub — grant a user access to a deal (Phase 10C gate)."""
+    try:
+        from services.db_factory import get_sql_session
+        from models.sql_models import DealAccess
+        with next(get_sql_session()) as session:
+            session.add(DealAccess(
+                access_id=str(uuid4()),
+                user_id=user_id,
+                deal_id=deal_id,
+                access_level=access_level,
+                granted_by=granted_by,
+                granted_at=_now(),
+            ))
+            session.commit()
+        return True
+    except Exception as exc:
+        logger.warning("grant_deal_access failed: %s", exc)
         return False

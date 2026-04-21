@@ -181,13 +181,36 @@ async def _serpapi_news_pass(deal_id: str, entities: list[dict], result: dict) -
                     if not url or not title:
                         continue
                     from services import graph_service
+                    source_name = (
+                        item.get("source", {}).get("name")
+                        if isinstance(item.get("source"), dict)
+                        else item.get("source")
+                    )
                     graph_service.write_news_article_node(
                         url=url,
                         title=title,
                         published_date=item.get("date"),
-                        source=item.get("source", {}).get("name") if isinstance(item.get("source"), dict) else item.get("source"),
+                        source=source_name,
                     )
                     graph_service.link_company_to_news_article(ent["entity_id"], url)
+                    # 3C.8 — persist full body text to MongoDB for word cloud and RAG
+                    body_text = item.get("snippet") or item.get("body") or ""
+                    try:
+                        from services import mongo_service as _mongo
+                        _mongo.save_news_article(
+                            deal_id=deal_id,
+                            entity_ids=[ent["entity_id"]],
+                            headline=title,
+                            body=body_text,
+                            url=url,
+                            source=source_name,
+                            publish_date=item.get("date"),
+                            sentiment_score=None,
+                            keywords=[],
+                            entities_mentioned=[ent["legal_name"]],
+                        )
+                    except Exception as _me:
+                        logger.warning("[enrichment] save_news_article (mongo) failed — %s", _me)
                     articles_created += 1
                 await asyncio.sleep(0.5)  # rate-limit courtesy delay
             except Exception as exc:
@@ -392,6 +415,28 @@ async def _courtlistener_pass(deal_id: str, entities: list[dict], result: dict) 
                         court=docket.get("court") or "",
                         jurisdiction=docket.get("jurisdiction") or "",
                     )
+                    # 3C.8 — persist full docket text to MongoDB court_filings
+                    full_text = (
+                        docket.get("plain_text") or
+                        docket.get("description") or
+                        docket.get("case_name") or ""
+                    )
+                    try:
+                        from services import mongo_service as _mongo
+                        _mongo.save_court_filing(
+                            deal_id=deal_id,
+                            entity_ids=[ent["entity_id"]],
+                            neo4j_action_id=action_id,
+                            case_number=docket.get("docket_number") or "",
+                            court=docket.get("court") or "",
+                            filing_type="docket_entry",
+                            full_text=full_text,
+                            filing_date=docket.get("date_filed"),
+                            parties=[],
+                            outcome_summary=None,
+                        )
+                    except Exception as _me:
+                        logger.warning("[enrichment] save_court_filing (mongo) failed — %s", _me)
                     actions_found += 1
                 await asyncio.sleep(0.5)
             except Exception as exc:

@@ -1,6 +1,7 @@
 /**
- * AgentWordCloud — displays TF-IDF weighted word cloud from agent outputs.
+ * AgentWordCloud — displays TF-weighted word cloud from external evidence corpus.
  * Sources from GET /api/mongo/word-cloud?deal_id=
+ * Collections: news_articles, reviews, court_filings, document_chunks, industry_reports.
  * Uses react-wordcloud (lazy-loaded; shows table fallback if not installed).
  */
 
@@ -93,7 +94,7 @@ export default function AgentWordCloud() {
       <div className="flex items-center justify-between px-3 py-2 bg-[#f4f4f4] border-b border-[#e0e0e0]">
         <div className="flex items-center gap-2">
           <Cloud size={13} className="text-[#6929c4]" />
-          <span className="text-xs font-semibold text-[#161616]">Agent Output Word Cloud</span>
+          <span className="text-xs font-semibold text-[#161616]">External Evidence Word Cloud</span>
           {terms.length > 0 && (
             <span className="text-[10px] text-[#8d8d8d]">{terms.length} terms</span>
           )}
@@ -117,7 +118,7 @@ export default function AgentWordCloud() {
       )}
       {!loading && !error && terms.length === 0 && (
         <p className="text-xs text-[#a8a8a8] italic px-3 py-4">
-          No agent output data yet — run the pipeline first.
+          No external evidence data yet — run enrichment first.
         </p>
       )}
       {!loading && !error && terms.length > 0 && (

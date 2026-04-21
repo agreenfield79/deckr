@@ -1,9 +1,14 @@
 """
 MongoDB Router — word cloud, document coverage, pipeline timeline endpoints.
 Reads from MongoDB collections populated during the pipeline.
+
+Phase 3C.10: Word cloud re-sourced to external evidence corpus
+(news_articles, reviews, court_filings, document_chunks, industry_reports).
+No longer reads from agent_outputs / agent_edit_history or filesystem .md files.
 """
 
 import logging
+import math
 import re
 from collections import Counter
 
@@ -37,61 +42,108 @@ def _tokenize(text: str) -> list[str]:
 @router.get("/word-cloud")
 def get_word_cloud(request: Request, deal_id: str | None = None):
     """
-    Return top-60 terms by frequency across all agent .md outputs for a deal.
-    Falls back to workspace .md files when MongoDB agent_outputs is empty.
+    Return top-60 terms by TF-weighted frequency from the External Evidence Corpus.
+
+    Sources (Phase 3C.10):
+      1. news_articles.body       — filtered by deal_id
+      2. reviews.full_text        — filtered by deal_id
+      3. court_filings.full_text  — filtered by deal_id
+      4. document_chunks.text     — filtered by deal_id
+      5. industry_reports.body    — filtered by naics_code from SQL deals table
+
+    If all collections are empty, returns {"terms": [], "source": "no_evidence"}.
+    No fallback to agent_edit_history or filesystem .md files.
     """
     try:
         if deal_id is None:
             return {"status": "error", "message": "deal_id required"}
 
         all_text: list[str] = []
+        sources_used: list[str] = []
 
-        # Primary: MongoDB agent_outputs
-        try:
-            from services.mongo_service import _db as _mongo_db
-            db = _mongo_db()
-            if db is not None:
-                docs = list(db.agent_outputs.find(
-                    {"deal_id": deal_id},
-                    {"content": 1, "_id": 0}
-                ).limit(50))
-                for doc in docs:
-                    if doc.get("content"):
-                        all_text.append(doc["content"])
-        except Exception:
-            pass
+        from services.mongo_service import _db as _mongo_db
+        db = _mongo_db()
 
-        # Fallback: read workspace .md files if no MongoDB data
-        if not all_text:
+        if db is not None:
+            # Sources 1–4: deal-scoped collections
+            _DEAL_SOURCES = [
+                ("news_articles",   "body"),
+                ("reviews",         "full_text"),
+                ("court_filings",   "full_text"),
+                ("document_chunks", "text"),
+            ]
+            for collection_name, field in _DEAL_SOURCES:
+                try:
+                    docs = list(
+                        getattr(db, collection_name)
+                        .find({"deal_id": deal_id}, {field: 1, "_id": 0})
+                        .limit(100)
+                    )
+                    texts = [d[field] for d in docs if d.get(field)]
+                    if texts:
+                        all_text.extend(texts)
+                        sources_used.append(collection_name)
+                except Exception:
+                    pass
+
+            # Source 5: industry_reports — scoped by naics_code from SQL
             try:
-                from services import workspace_service
-                for folder in ["Agent Notes", "Deck", "SLACR"]:
-                    try:
-                        entries = workspace_service.list_files(folder)
-                        for entry in (entries or []):
-                            if entry.endswith(".md"):
-                                content = workspace_service.read_file(entry)
-                                if content:
-                                    all_text.append(content)
-                    except Exception:
-                        pass
+                from services.db_factory import get_sql_session
+                from models.sql_models import Deal
+                from sqlalchemy import select
+                with next(get_sql_session()) as session:
+                    row = session.execute(
+                        select(Deal.naics_code).where(Deal.deal_id == deal_id)
+                    ).scalar_one_or_none()
+                naics_code = row
+                if naics_code:
+                    docs = list(
+                        db.industry_reports
+                        .find({"naics_code": naics_code}, {"body": 1, "_id": 0})
+                        .limit(10)
+                    )
+                    texts = [d["body"] for d in docs if d.get("body")]
+                    if texts:
+                        all_text.extend(texts)
+                        sources_used.append("industry_reports")
             except Exception:
                 pass
 
         if not all_text:
-            return {"deal_id": deal_id, "terms": []}
+            return {"deal_id": deal_id, "terms": [], "source": "no_evidence"}
 
-        combined = " ".join(all_text)
-        tokens = _tokenize(combined)
-        freq = Counter(tokens)
-        top = freq.most_common(60)
-        max_count = top[0][1] if top else 1
+        # TF-IDF weighting (Phase 2B requirement)
+        # Each entry in all_text is treated as one document.
+        doc_token_lists = [_tokenize(t) for t in all_text]
+        n_docs = len(doc_token_lists)
+
+        # Document frequency: number of documents containing each term.
+        df: Counter = Counter()
+        for tokens in doc_token_lists:
+            for term in set(tokens):
+                df[term] += 1
+
+        # Accumulate TF-IDF scores across all documents.
+        tfidf: Counter = Counter()
+        for tokens in doc_token_lists:
+            if not tokens:
+                continue
+            tf = Counter(tokens)
+            doc_len = len(tokens)
+            for term, count in tf.items():
+                tf_score = count / doc_len
+                idf_score = math.log(n_docs / df[term]) + 1.0  # +1 prevents zero IDF when N==df
+                tfidf[term] += tf_score * idf_score
+
+        top = tfidf.most_common(60)
+        max_score = top[0][1] if top else 1.0
 
         return {
             "deal_id": deal_id,
+            "source":  sources_used,
             "terms": [
-                {"text": word, "value": count, "weight": round(count / max_count, 4)}
-                for word, count in top
+                {"text": word, "value": round(score, 6), "weight": round(score / max_score, 4)}
+                for word, score in top
             ],
         }
     except Exception as exc:
@@ -137,6 +189,7 @@ def get_pipeline_timeline(request: Request, deal_id: str | None = None, limit: i
     """
     Return stage start/end/status per run for Gantt rendering.
     Sources MongoDB pipeline_runs first, falls back to SQL pipeline_stage_logs.
+    Note: SQL pipeline_stage_logs has 79+ rows (actively written — not a fallback only).
     """
     try:
         from services.mongo_service import get_pipeline_run_history
@@ -169,13 +222,13 @@ def get_pipeline_timeline(request: Request, deal_id: str | None = None, limit: i
                     "status": run.status,
                     "started_at": run.started_at.isoformat() if run.started_at else None,
                     "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-                    "total_elapsed_ms": (run.total_duration_seconds or 0) * 1000,
+                    "total_elapsed_ms": getattr(run, "total_elapsed_ms", None) or (getattr(run, "total_duration_seconds", 0) or 0) * 1000,
                     "stages": [
                         {
                             "agent_name": s.agent_name,
                             "stage_order": s.stage_order,
                             "status": s.status,
-                            "elapsed_ms": (s.duration_seconds or 0) * 1000,
+                            "elapsed_ms": getattr(s, "elapsed_ms", None) or (getattr(s, "duration_seconds", 0) or 0) * 1000,
                             "started_at": s.started_at.isoformat() if s.started_at else None,
                             "completed_at": s.completed_at.isoformat() if s.completed_at else None,
                         }

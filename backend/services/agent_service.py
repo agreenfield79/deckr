@@ -1041,6 +1041,7 @@ def _log_stage(pipeline_state: dict, agent_name: str, stage_order: int,
             status          = status,
             elapsed_ms      = max(elapsed_ms, 0),
             saved_to        = output_path,
+            deal_id         = pipeline_state.get("deal_id") or "",
         )
     except Exception as exc:
         logger.warning("_log_stage Mongo failed agent=%s — %s", agent_name, exc)
@@ -1128,6 +1129,23 @@ def _ip2_industry(pipeline_state: dict) -> None:
             )
             logger.info("IP2[industry]: Industry node enriched naics_code=%s", naics_code)
 
+            # 3C.8 — write industry report body to MongoDB for word cloud and RAG
+            report_body = enrichment.get("report_body") or enrichment.get("summary") or ""
+            if report_body:
+                try:
+                    from services import mongo_service as _mongo_ind
+                    _mongo_ind.save_industry_report(
+                        naics_code=naics_code,
+                        title=enrichment.get("report_title") or f"Industry Report — NAICS {naics_code}",
+                        body=report_body,
+                        published_at=None,
+                        publisher=enrichment.get("publisher"),
+                        report_type=enrichment.get("report_type") or "sector_analysis",
+                    )
+                    logger.info("IP2[industry]: industry_report saved to MongoDB naics_code=%s", naics_code)
+                except Exception as _me:
+                    logger.warning("IP2[industry]: save_industry_report (mongo) failed — %s", _me)
+
             # Create NewsArticle nodes + MENTIONED_IN edges if provided in sidecar
             articles = enrichment.get("news_articles") or []
             created = 0
@@ -1180,8 +1198,15 @@ def _ip2_collateral(pipeline_state: dict) -> None:
             deal_id=pipeline_state.get("deal_id") or "",
             collateral_id=collateral_id,
             collateral_type=enrichment.get("collateral_type", "unknown"),
-            appraised_value=enrichment.get("appraised_value"),
         )
+        # Route appraised_value to SQL (Phase 3D.1 — no amounts in Neo4j nodes)
+        appraisal_scalar = enrichment.get("appraised_value")
+        if appraisal_scalar is not None:
+            from services import sql_service
+            sql_service.update_collateral_appraisal(
+                collateral_id=collateral_id,
+                appraised_value=float(appraisal_scalar),
+            )
         logger.info("IP2[collateral]: Collateral node updated from sidecar")
 
         # Write APPRAISED_BY edges
@@ -1192,7 +1217,6 @@ def _ip2_collateral(pipeline_state: dict) -> None:
                 collateral_id=collateral_id,
                 appraiser_name=appraisal["appraiser_name"],
                 appraisal_date=appraisal.get("appraisal_date"),
-                appraised_value=appraisal.get("appraised_value"),
             )
             logger.info("IP2[collateral]: APPRAISED_BY edge written — %s", appraisal["appraiser_name"])
 
@@ -1204,8 +1228,10 @@ def _ip2_collateral(pipeline_state: dict) -> None:
                 collateral_id=collateral_id,
                 lien_id=lien["lien_id"],
                 lien_type=lien.get("lien_type", "UCC"),
-                amount=lien.get("amount"),
-                secured_party=lien.get("secured_party"),
+                filing_date=lien.get("filing_date"),
+                status=lien.get("status"),
+                state=lien.get("state"),
+                recording_date=lien.get("recording_date"),
             )
             logger.info("IP2[collateral]: SUBJECT_TO lien edge written — %s", lien["lien_id"])
     except Exception:
@@ -1264,10 +1290,22 @@ def _ip2_guarantor(pipeline_state: dict) -> None:
             graph_service.write_guarantees_relationship(
                 entity_id=str(row.entity_id),
                 loan_terms_id=loan_terms_id,
+                guarantee_type="full",
             )
+            # Also write to SQL guarantees table (Phase 3B.4)
+            try:
+                from services import sql_service as _ss
+                _ss.insert_guarantee(deal_id=deal_id, data={
+                    "guarantor_entity_id": str(row.entity_id),
+                    "loan_terms_id": loan_terms_id,
+                    "guarantee_type": "full",
+                })
+            except Exception as _ge:
+                logger.warning("IP2[guarantor]: guarantees SQL row failed — %s", _ge)
         if rows:
             logger.info(
-                "IP2[guarantor]: wrote %d GUARANTEES edge(s) deal_id=%s", len(rows), deal_id
+                "IP2[guarantor]: wrote %d GUARANTEES edge(s) + guarantees row(s) deal_id=%s",
+                len(rows), deal_id,
             )
     except Exception as exc:
         logger.warning("IP2[guarantor]: GUARANTEES edge write failed — %s", exc)
@@ -1382,6 +1420,41 @@ def _fire_ip3_hook(pipeline_state: dict) -> None:
             )
         else:
             logger.warning("IP3: write_slacr_score returned False for deal_id=%s", deal_id)
+
+        # Write feature_store snapshot (Phase 3B.6)
+        try:
+            from services.db_factory import get_sql_session
+            from models.sql_models import FinancialRatio, Entity, SlacrScore
+            from sqlalchemy import select
+            _deal = pipeline_state.get("deal_id") or deal_id
+            _run  = pipeline_state.get("pipeline_run_id") or pipeline_run_id
+            with next(get_sql_session()) as _sess:
+                _entity = _sess.execute(
+                    select(Entity).where(Entity.deal_id == _deal).limit(1)
+                ).scalar_one_or_none()
+                _entity_id = str(_entity.entity_id) if _entity else None
+                _ratios = []
+                if _entity_id:
+                    _ratios = _sess.execute(
+                        select(FinancialRatio)
+                        .where(FinancialRatio.entity_id == _entity_id)
+                        .order_by(FinancialRatio.fiscal_year.desc())
+                        .limit(2)
+                    ).scalars().all()
+            _r0 = _ratios[0] if _ratios else None
+            _r1 = _ratios[1] if len(_ratios) > 1 else None
+            sql_service.insert_feature_snapshot(deal_id=_deal, pipeline_run_id=_run, data={
+                "dscr_t0":          float(_r0.dscr) if _r0 and _r0.dscr else None,
+                "dscr_t1":          float(_r1.dscr) if _r1 and _r1.dscr else None,
+                "leverage_t0":      float(_r0.leverage_ratio) if _r0 and _r0.leverage_ratio else None,
+                "ebitda_margin_t0": float(_r0.ebitda_margin) if _r0 and _r0.ebitda_margin else None,
+                "current_ratio_t0": float(_r0.current_ratio) if _r0 and _r0.current_ratio else None,
+                "naics_code":       pipeline_state.get("naics_code"),
+                "years_in_business": _entity.years_in_business if _entity else None,
+            })
+            logger.info("IP3: feature_store snapshot written deal_id=%s", _deal)
+        except Exception as _fe:
+            logger.warning("IP3: feature_store write failed (non-fatal) — %s", _fe)
 
         # Insert covenants derived from the financial_ratios.json sidecar
         _ip3_covenants_from_risk(pipeline_state)
@@ -2001,6 +2074,31 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                         )
                     except Exception as _mpr_exc:
                         logger.warning("IP1: open_pipeline_run (mongo) failed — %s", _mpr_exc)
+                    # Write Neo4j PipelineRun node + EVALUATED_IN edge (Phase 3D.2)
+                    try:
+                        from services import graph_service as _gs_ip1
+                        import datetime as _dt_ip1
+                        _pr_id_ip1 = _pipeline_state["pipeline_run_id"]
+                        _deal_id_ip1 = _seed.deal_id or ""
+                        _gs_ip1.write_pipeline_run_node(
+                            pipeline_run_id=_pr_id_ip1,
+                            deal_id=_deal_id_ip1,
+                            started_at=_dt_ip1.datetime.utcnow().isoformat() + "Z",
+                            status="running",
+                        )
+                        # Link Loan → PipelineRun if loan_terms_id is available
+                        _lt_ip1 = _pipeline_state.get("loan_terms_id") or ""
+                        if not _lt_ip1:
+                            _lt_data = _sql.get_loan_terms(_deal_id_ip1)
+                            _lt_ip1 = (_lt_data or {}).get("loan_terms_id", "")
+                        if _lt_ip1:
+                            _gs_ip1.write_evaluated_in_edge(
+                                loan_terms_id=_lt_ip1,
+                                pipeline_run_id=_pr_id_ip1,
+                                evaluated_at=_dt_ip1.datetime.utcnow().isoformat() + "Z",
+                            )
+                    except Exception as _neo_pr_exc:
+                        logger.warning("IP1: Neo4j PipelineRun write failed — %s", _neo_pr_exc)
                     yield json.dumps({
                         "type":          "ip1_seeded",
                         "deal_id":       _seed.deal_id,
