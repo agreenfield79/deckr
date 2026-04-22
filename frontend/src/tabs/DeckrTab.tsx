@@ -4,10 +4,7 @@ import * as deckrApi from '../api/deckr'
 import MarkdownViewer from '../editor/MarkdownViewer'
 import DeckrPoster from '../components/DeckrPoster'
 import type { DeckrSections } from '../components/DeckrPoster'
-import { getProjectionsOutput, type ProjectionsOutput } from '../api/projections'
-import { getCurrentDeal } from '../api/pipelineRuns'
 import { useToast } from '../context/ToastContext'
-import { DscrProjectionChart, LeverageProjectionChart } from '../charts/ProjectionsChart'
 
 // ---------------------------------------------------------------------------
 // Section parser — builds a typed DeckrSections from raw deckr.md content.
@@ -27,21 +24,25 @@ function parseSections(markdown: string): Record<string, string> {
 
 function toDeckrSections(sections: Record<string, string>, raw: string): DeckrSections {
   const get = (key: string) => sections[key] ?? ''
-  const loanStructure       = get('Loan Structure')
+  // §5 — new name first; fall back to legacy names for existing deckr.md files
+  const loanStructure       = get('Proposed Loan Structure') || get('Loan Structure')
+  // legacy — kept so buildHeaderLine can extract Contact from old files
   const biddingInstructions = get('Bidding Instructions')
   const s: DeckrSections = {
-    header:              get('Header'),
-    companyOverview:     get('Company Overview & History'),
-    performance:         get('Performance Summary'),
-    // Accept new name first; fall back to legacy names for existing files
-    abilityToRepay:      get('Credit Rationale') || get('Strengths & Risk Mitigants') || get('Ability to Repay'),
+    header:           get('Header'),
+    companyOverview:  get('Company Overview & History'),
+    performance:      get('Performance Summary'),
+    // §4 — new name first; fall back to legacy section names for existing files
+    partnershipValue: get('Partnership Value') || get('Credit Rationale') || get('Strengths & Risk Mitigants') || get('Ability to Repay'),
     loanStructure,
     biddingInstructions,
+    // §6 prose — new section name; legacy fallback omitted (was not a section before)
+    projectionsText:  get('Projections'),
     raw,
-    hasStructure:        false,
+    hasStructure:     false,
   }
   const filledCount = [
-    s.header, s.companyOverview, s.performance, s.abilityToRepay,
+    s.header, s.companyOverview, s.performance, s.partnershipValue,
     loanStructure || biddingInstructions,
   ].filter(Boolean).length
   s.hasStructure = filledCount >= 3
@@ -56,12 +57,11 @@ export default function DeckrTab() {
   const { error: toastError, info: toastInfo } = useToast()
   const deckrRef = useRef<HTMLDivElement>(null)
 
-  const [sections, setSections]         = useState<Record<string, string>>({})
+  const [sections, setSections]           = useState<Record<string, string>>({})
   const [deckrSections, setDeckrSections] = useState<DeckrSections | null>(null)
-  const [loading, setLoading]           = useState(true)
-  const [hasContent, setHasContent]     = useState(false)
-  const [gridView, setGridView]         = useState(true)
-  const [projectionsData, setProjectionsData] = useState<ProjectionsOutput | null>(null)
+  const [loading, setLoading]             = useState(true)
+  const [hasContent, setHasContent]       = useState(false)
+  const [gridView, setGridView]           = useState(true)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -84,13 +84,6 @@ export default function DeckrTab() {
         setDeckrSections(null)
         setHasContent(false)
       }
-      // Load projections data for the poster banner (non-blocking)
-      getCurrentDeal().then(async (deal) => {
-        if (deal.deal_id) {
-          const p = await getProjectionsOutput(deal.deal_id)
-          if (p) setProjectionsData(p)
-        }
-      }).catch(() => {})
     } catch {
       toastError('Failed to load deal sheet')
     } finally {
@@ -237,13 +230,7 @@ export default function DeckrTab() {
         {/* ---------------------------------------------------------------- */}
         {gridView && deckrSections ? (
           <div ref={deckrRef} id="deckr-deal-sheet">
-            <DeckrPoster
-              sections={{
-                ...deckrSections,
-                projections: projectionsData,
-                projectionsText: sections['Projections'] ?? '',
-              }}
-            />
+            <DeckrPoster sections={deckrSections} />
           </div>
         ) : (
 
@@ -313,20 +300,6 @@ export default function DeckrTab() {
 
             {/* Footer */}
             <div className="mt-8 pt-4" style={{ borderTop: '1px solid #ffd9b5' }}>
-              {/* Projections table — full-width below sections, above footer */}
-              {projectionsData && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#ff832b] px-2 py-0.5 rounded">
-                      3-Year Projections
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <DscrProjectionChart data={projectionsData} compact />
-                    <LeverageProjectionChart data={projectionsData} compact />
-                  </div>
-                </div>
-              )}
               <p className="text-[10px] text-[#a8a8a8] text-center">
                 Generated by Deckr · Powered by IBM watsonx · This document is prepared for the borrower's use in approaching prospective lenders.
               </p>

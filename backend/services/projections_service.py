@@ -165,25 +165,57 @@ def _load_financials_from_json(workspace_root: str) -> tuple[list, list, list]:
 
 
 def _load_loan_terms(deal_id: str, workspace_root: str) -> dict:
-    """SQL → loan_terms.json → hardcoded defaults."""
-    from services import sql_service
-    lt = sql_service.get_loan_terms(deal_id)
-    if lt:
-        logger.info("projections: loan_terms loaded from SQL deal_id=%s", deal_id)
-        return lt
+    """loan_terms.json (user-submitted) → SQL → hardcoded defaults.
 
+    JSON is tried first because the forms router computes proposed_annual_debt_service
+    correctly via amortization formula. The SQL row may have been contaminated by the
+    extraction agent reading the borrower's existing corporate debt service from uploaded
+    10-K financials, producing an ADS figure orders of magnitude too large.
+    """
+    # ── 1. Filesystem first — authoritative user-submitted form output ────────
     json_path = Path(workspace_root) / "Financials" / "loan_terms.json"
     if json_path.exists():
         try:
             lt = json.loads(json_path.read_text(encoding="utf-8"))
             lt.setdefault("loan_terms_id", None)
+            # Sanity guard: ADS must be < loan_amount for any real loan
+            ads = lt.get("proposed_annual_debt_service") or 0.0
+            principal = lt.get("loan_amount") or 0.0
+            if principal > 0 and ads > principal:
+                logger.warning(
+                    "projections: loan_terms.json ADS %.0f > loan_amount %.0f — "
+                    "discarding ADS (likely extraction artifact); will recompute",
+                    ads, principal,
+                )
+                lt.pop("proposed_annual_debt_service", None)
             logger.info("projections: loan_terms loaded from loan_terms.json")
             return lt
         except Exception as exc:
             logger.warning("projections: loan_terms.json parse failed — %s", exc)
 
-    logger.info("projections: using default loan terms (no SQL row or file found)")
-    return dict(_DEFAULT_LOAN_TERMS)
+    # ── 2. SQL fallback ───────────────────────────────────────────────────────
+    from services import sql_service
+    lt = sql_service.get_loan_terms(deal_id)
+    if lt:
+        logger.info("projections: loan_terms loaded from SQL deal_id=%s", deal_id)
+        # Same sanity guard applies to SQL row
+        ads = lt.get("proposed_annual_debt_service") or 0.0
+        principal = lt.get("loan_amount") or 0.0
+        if principal > 0 and ads > principal:
+            logger.warning(
+                "projections: SQL loan_terms ADS %.0f > loan_amount %.0f — "
+                "discarding ADS (likely extraction artifact); will recompute",
+                ads, principal,
+            )
+            lt["proposed_annual_debt_service"] = 0.0
+        return lt
+
+    logger.info("projections: using default loan terms (no file or SQL row found)")
+    # Phase 2 target schema removes covenant_definitions from loan_terms;
+    # strip it from the default dict so it is never forwarded to callers.
+    default = dict(_DEFAULT_LOAN_TERMS)
+    default.pop("covenant_definitions", None)
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +355,7 @@ def _project_year(
     if dscr is not None and dscr > _DSCR_CAP:
         logger.warning(
             "projections: DSCR %.1fx exceeds cap of %.1fx — capping for feature store "
-            "(deal likely using default loan terms; check loan_terms SQL row)",
+            "(may reflect legitimate borrower scale; verify ADS vs operating income ratio is expected)",
             dscr, _DSCR_CAP,
         )
         dscr = _DSCR_CAP

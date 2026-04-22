@@ -1,22 +1,20 @@
 import MarkdownViewer from '../editor/MarkdownViewer'
-import { DscrProjectionChart, LeverageProjectionChart } from '../charts/ProjectionsChart'
-import type { ProjectionsOutput } from '../api/projections'
 
 // ---------------------------------------------------------------------------
 // DeckrSections — exported so DeckrTab can import and build the typed object.
-// New format (6 sections): loanStructure = Section 5, biddingInstructions = Section 6.
-// Legacy format (5 sections): loanStructure = '', biddingInstructions holds everything.
+// New format (6 sections): §4 partnershipValue, §5 loanStructure (3-col table), §6 projections prose.
+// Legacy format (5 sections): partnershipValue falls back to abilityToRepay names; biddingInstructions
+//   kept for header contact extraction on old files.
 // ---------------------------------------------------------------------------
 
 export interface DeckrSections {
   header: string               // ## 1. Header
   companyOverview: string      // ## 2. Company Overview & History
   performance: string          // ## 3. Performance Summary
-  abilityToRepay: string       // ## 4. Credit Rationale (legacy: Ability to Repay)
-  loanStructure: string        // ## 5. Loan Structure (markdown table: Term | Memo | Proposed)
-  biddingInstructions: string  // ## 6. Bidding Instructions (process/contact)
-  projections?: ProjectionsOutput | null  // from GET /api/projections/output — optional
-  projectionsText?: string     // ## 7. Projections prose from deckr.md — optional
+  partnershipValue: string     // ## 4. Partnership Value (replaces Ability to Repay)
+  loanStructure: string        // ## 5. Proposed Loan Structure (3-col table: Term | Bank Terms | Proposed)
+  biddingInstructions: string  // legacy — kept for header contact extraction on old files
+  projectionsText?: string     // ## 6. Projections prose — retained for possible future use
   raw: string                  // full original markdown — List View fallback
   hasStructure: boolean        // true when ≥3 named sections parsed
 }
@@ -117,6 +115,70 @@ function cleanCollateral(value: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.,;]+$/, '')
+}
+
+/**
+ * Extract contact and date from the pipe-delimited Section 1 Header line.
+ * Format: Name | Loan Type | Amount | Contact | Date
+ */
+function parseBiddingInfo(header: string): { contact: string; date: string; subCaption: string } {
+  const lines = header.split('\n').map((l) => l.trim()).filter(Boolean)
+  const firstLine = lines[0] ?? ''
+  const subCaption = lines.slice(1).join(' ').replace(/\*\*/g, '').trim()
+  const pipes = firstLine.split('|').map((s) => s.trim())
+  return {
+    contact:    pipes[3] ?? '',
+    date:       pipes[4] ?? '',
+    subCaption,
+  }
+}
+
+/**
+ * Render Performance Summary splitting the markdown table from any trailing
+ * prose. The prose is rendered as a full-width paragraph so it does not
+ * inherit the table's column layout.
+ */
+function PerformanceContent({ content }: { content: string }) {
+  const lines = content.split('\n')
+  const tableLines: string[] = []
+  const proseLines: string[] = []
+  let passedTable = false
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const isTableLine = trimmed.startsWith('|') || /^\|[-\s|:]+\|$/.test(trimmed)
+    if (!passedTable && isTableLine) {
+      tableLines.push(line)
+    } else if (tableLines.length > 0 && !isTableLine) {
+      passedTable = true
+      proseLines.push(line)
+    } else if (passedTable) {
+      proseLines.push(line)
+    } else {
+      proseLines.push(line)
+    }
+  }
+
+  const tableContent = tableLines.join('\n').trim()
+  const proseContent = proseLines.join('\n').trim()
+
+  return (
+    <div style={{ width: '100%' }}>
+      {tableContent && <MarkdownViewer content={tableContent} textSize="10px" />}
+      {proseContent && (
+        <p style={{
+          fontSize: '10px',
+          color: '#525252',
+          lineHeight: 1.45,
+          margin: tableContent ? '6px 0 0' : '0',
+          display: 'block',
+          width: '100%',
+        }}>
+          {proseContent.replace(/\*\*/g, '')}
+        </p>
+      )}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -229,94 +291,50 @@ function parseLoanFieldsFallback(sections: DeckrSections): LoanRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// Group separator logic — matches by label name, not row position
-// ---------------------------------------------------------------------------
-
-type RowGroup = 'LOAN TERMS' | 'COVENANTS & COMPLIANCE' | 'CONDITIONS' | null
-
-function getRowGroup(label: string): RowGroup {
-  const l = label.toLowerCase()
-  // Use \b word-boundary so "prepayment" does NOT match \brepayment\b
-  if (/structure|\brate\b|\brepayment\b|collateral|guaranty|target\s*close/.test(l)) return 'LOAN TERMS'
-  if (/covenant|reporting|prepayment/.test(l)) return 'COVENANTS & COMPLIANCE'
-  if (/condition/.test(l)) return 'CONDITIONS'
-  return null
-}
-
-// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
 /**
- * Two-column table (Term | Proposed) for the Loan Structure panel.
- * Group labels appear as full-width section headers within the table.
+ * Two-column table (Term | Proposed) for the Proposed Loan Structure panel.
+ * Flat — no group headers, no separators. All rows render in one continuous sequence.
  */
 function LoanStructureTable({ rows }: { rows: LoanRow[] }) {
-  const tableRows: React.ReactNode[] = []
-  let currentGroup: RowGroup = null
-
-  for (const row of rows) {
-    const group = getRowGroup(row.label)
-    if (group && group !== currentGroup) {
-      currentGroup = group
-        tableRows.push(
-        <tr key={`sep-${group}`}>
-          <td
-            colSpan={2}
-            style={{
-              padding: '3px 6px 2px',
-              fontSize: '7px',
-              fontWeight: 700,
-              color: '#0043ce',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              textAlign: 'center',
-              backgroundColor: '#dbeafe',
-              borderTop: tableRows.length > 0 ? '1px solid #c9deff' : undefined,
-              borderBottom: '1px solid #c9deff',
-            }}
-          >
-            {group}
-          </td>
-        </tr>,
-      )
-    }
-
-    const displayValue = /collateral/i.test(row.label) ? cleanCollateral(row.value) : row.value
-    tableRows.push(
-      <tr key={row.label}>
-        <td style={{
-          padding: '3px 6px',
-          fontSize: '8px',
-          fontWeight: 600,
-          color: '#525252',
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          verticalAlign: 'top',
-          width: '28%',
-          lineHeight: 1.3,
-          borderBottom: '1px solid #dde1e7',
-        }}>
-          {row.label}
-        </td>
-        <td style={{
-          padding: '3px 6px',
-          fontSize: '10px',
-          fontWeight: 400,
-          color: '#161616',
-          verticalAlign: 'top',
-          lineHeight: 1.35,
-          borderBottom: '1px solid #dde1e7',
-        }}>
-          {displayValue}
-        </td>
-      </tr>,
-    )
-  }
-
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <tbody>{tableRows}</tbody>
+      <tbody>
+        {rows.map((row) => {
+          const displayValue = /collateral/i.test(row.label) ? cleanCollateral(row.value) : row.value
+          return (
+            <tr key={row.label}>
+              <td style={{
+                padding: '3px 6px',
+                fontSize: '8px',
+                fontWeight: 600,
+                color: '#525252',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                verticalAlign: 'top',
+                width: '28%',
+                lineHeight: 1.3,
+                borderBottom: '1px solid #dde1e7',
+              }}>
+                {row.label}
+              </td>
+              <td style={{
+                padding: '3px 6px',
+                fontSize: '10px',
+                fontWeight: 400,
+                color: '#161616',
+                verticalAlign: 'top',
+                lineHeight: 1.35,
+                borderBottom: '1px solid #dde1e7',
+              }}>
+                {displayValue}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
     </table>
   )
 }
@@ -377,6 +395,9 @@ export default function DeckrPoster({ sections }: Props) {
   // Build header display line (Name | Loan Type | Amount | Contact: ...)
   const headerLine = buildHeaderLine(sections.header, sections.biddingInstructions)
 
+  // Parse bidding info from Section 1 Header for the Bidding Instructions card
+  const biddingInfo = parseBiddingInfo(sections.header)
+
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', backgroundColor: 'white', border: '1px solid #e0e0e0' }}>
 
@@ -429,13 +450,13 @@ export default function DeckrPoster({ sections }: Props) {
 
           <Panel title="Performance Summary" accentColor="#198038">
             {sections.performance
-              ? <MarkdownViewer content={sections.performance} textSize="10px" />
+              ? <PerformanceContent content={sections.performance} />
               : PENDING}
           </Panel>
 
-          <Panel title="Credit Rationale" accentColor="#ff832b">
-            {sections.abilityToRepay
-              ? <MarkdownViewer content={sections.abilityToRepay} textSize="10px" />
+          <Panel title="Partnership Value" accentColor="#ff832b">
+            {sections.partnershipValue
+              ? <MarkdownViewer content={sections.partnershipValue} textSize="10px" />
               : PENDING}
           </Panel>
 
@@ -453,7 +474,6 @@ export default function DeckrPoster({ sections }: Props) {
             padding: '10px',
             printColorAdjust: 'exact',
             WebkitPrintColorAdjust: 'exact',
-            flex: 1,
           } as React.CSSProperties}>
             <h2 style={{
               fontSize: '11px',
@@ -463,57 +483,77 @@ export default function DeckrPoster({ sections }: Props) {
               paddingBottom: '4px',
               borderBottom: '1px solid #c9deff',
             }}>
-              Loan Structure
+              Proposed Loan Structure
             </h2>
             {loanRows.length > 0
               ? <LoanStructureTable rows={loanRows} />
               : PENDING}
           </div>
 
+          {/* Bidding Instructions — pulled from Section 1 Header metadata */}
+          {(biddingInfo.contact || biddingInfo.date) && (
+            <div style={{
+              borderRadius: '6px',
+              border: '1px solid #e0e0e0',
+              borderLeft: '4px solid #6f6f6f',
+              backgroundColor: '#f4f4f4',
+              padding: '10px',
+            }}>
+              <h2 style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#161616',
+                margin: '0 0 6px',
+                paddingBottom: '4px',
+                borderBottom: '1px solid #e0e0e0',
+              }}>
+                Bidding Instructions
+              </h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <tbody>
+                  {biddingInfo.contact && (
+                    <tr>
+                      <td style={{ fontSize: '8px', fontWeight: 600, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 6px', width: '40%', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                        Submit Proposals To
+                      </td>
+                      <td style={{ fontSize: '10px', color: '#161616', padding: '3px 6px', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                        {biddingInfo.contact}
+                      </td>
+                    </tr>
+                  )}
+                  {biddingInfo.date && (
+                    <tr>
+                      <td style={{ fontSize: '8px', fontWeight: 600, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 6px', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                        Date Prepared
+                      </td>
+                      <td style={{ fontSize: '10px', color: '#161616', padding: '3px 6px', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                        {biddingInfo.date}
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td style={{ fontSize: '8px', fontWeight: 600, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 6px', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                      Format
+                    </td>
+                    <td style={{ fontSize: '10px', color: '#161616', padding: '3px 6px', verticalAlign: 'top', borderBottom: '1px solid #dde1e7' }}>
+                      Indicative term sheet preferred
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ fontSize: '8px', fontWeight: 600, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 6px', verticalAlign: 'top' }}>
+                      Confidentiality
+                    </td>
+                    <td style={{ fontSize: '10px', color: '#161616', padding: '3px 6px', verticalAlign: 'top' }}>
+                      {biddingInfo.subCaption || 'For prospective lender use only'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
         </div>
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Full-width Projections Banner — below 2-col grid, above footer    */}
-      {/* ------------------------------------------------------------------ */}
-      {sections.projections && (
-        <div style={{
-          borderTop: '1px solid #e0e0e0',
-          padding: '8px 12px',
-          printColorAdjust: 'exact',
-          WebkitPrintColorAdjust: 'exact',
-        } as React.CSSProperties}>
-          {/* Banner header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <span style={{
-              fontSize: '8px',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: '#ffffff',
-              backgroundColor: '#ff832b',
-              padding: '2px 6px',
-              borderRadius: '2px',
-            }}>
-              3-Year Projections
-            </span>
-            <span style={{ fontSize: '9px', color: '#6f6f6f' }}>
-              Base · Upside · Stress · Covenant thresholds: DSCR ≥ 1.25x, Debt/EBITDA ≤ 4.0x
-            </span>
-          </div>
-          {/* Optional prose from deckr.md Section 7 */}
-          {sections.projectionsText && (
-            <p style={{ fontSize: '9px', color: '#525252', marginBottom: '6px', lineHeight: 1.4 }}>
-              {sections.projectionsText.replace(/###.*\n/g, '').replace(/\*\*/g, '').trim().split('\n')[0]}
-            </p>
-          )}
-          {/* Side-by-side compact charts */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <DscrProjectionChart data={sections.projections} compact />
-            <LeverageProjectionChart data={sections.projections} compact />
-          </div>
-        </div>
-      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Full-width footer                                                   */}

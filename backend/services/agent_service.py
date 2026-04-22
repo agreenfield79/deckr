@@ -862,20 +862,25 @@ def _load_context(context_folders: list[str], query: str = "") -> str:
 
 def _inject_deckr_context() -> str:
     """
-    Pre-load Deck/memo.md and Agent Notes/financial_analysis.md for the deckr agent.
+    Pre-load source files for the deckr agent.
 
     GPT-OSS-120B non-deterministically calls get_file_content without the required
     'path' argument, causing repeated tool errors and an incomplete pipeline run.
-    Pre-injecting both source files eliminates all get_file_content dependency —
+    Pre-injecting all source files eliminates get_file_content dependency —
     the agent's only remaining tool call is save_to_workspace.
+
+    loan_terms.json is included so the deckr agent can populate Proposed Loan
+    Structure table rows (Rate, Term, Repayment, etc.) directly from the
+    user-submitted form data when memo §4 is sparse.
 
     Returns an empty string when the files do not yet exist, which is a safe no-op.
     """
     blocks: list[str] = []
     for path, label in [
-        ("Deck/memo.md",                          "CREDIT MEMORANDUM (Deck/memo.md)"),
-        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
-        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY (Financials/projections_summary.md)"),
+        ("Deck/memo.md",                          "CREDIT MEMORANDUM"),
+        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS"),
+        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY"),
+        ("Financials/loan_terms.json",            "LOAN TERMS"),
     ]:
         try:
             content = workspace_service.read_file(path)
@@ -966,27 +971,31 @@ def _inject_financial_context() -> str:
 def _inject_packaging_context() -> str:
     """
     Pre-load the key prior-agent outputs that the packaging agent needs for
-    sections 8b (Financial Projections) and 9 (Industry & Market Analysis).
+    sections 4 (Credit Request Summary), 8b (Financial Projections), and
+    9 (Industry & Market Analysis).
 
-    Without pre-injection the packaging agent exhausts its 3-step reasoning
-    budget on inventory + SLACR retrieval and never executes the projections or
-    industry search calls, causing both sections to render as [DATA MISSING].
+    Without pre-injection the packaging agent has no path to loan_terms.json
+    or request.md, causing §4 to render with "not disclosed" rate and
+    "to be defined" amortization even when the user submitted a loan form.
 
     Files are guaranteed to exist by the time packaging runs:
+      - loan_terms.json / request.md — written by the forms router when the
+        user submits the Loan Request form before starting the pipeline.
       - projections_summary.md / covenant_compliance.json — written by
-        projections_service at IP2.5 (after the financial/industry/collateral/
-        guarantor parallel stage, before the risk stage).
-      - industry_analysis.md — written by the industry agent in the parallel stage.
-      - financial_analysis.md — written by the financial agent in the parallel stage.
+        projections_service at IP2.5.
+      - industry_analysis.md / financial_analysis.md — written by the
+        respective agents in the parallel stage.
 
     Returns an empty string when files do not yet exist (safe no-op).
     """
     blocks: list[str] = []
     for path, label in [
-        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY (Financials/projections_summary.md)"),
-        ("Financials/covenant_compliance.json",   "COVENANT COMPLIANCE DATA (Financials/covenant_compliance.json)"),
-        ("Agent Notes/industry_analysis.md",      "INDUSTRY ANALYSIS (Agent Notes/industry_analysis.md)"),
-        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS (Agent Notes/financial_analysis.md)"),
+        ("Financials/loan_terms.json",            "LOAN TERMS"),
+        ("Loan Request/request.md",               "LOAN REQUEST"),
+        ("Financials/projections_summary.md",     "FINANCIAL PROJECTIONS SUMMARY"),
+        ("Financials/covenant_compliance.json",   "COVENANT COMPLIANCE DATA"),
+        ("Agent Notes/industry_analysis.md",      "INDUSTRY ANALYSIS"),
+        ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS"),
     ]:
         try:
             content = workspace_service.read_file(path)
@@ -1632,8 +1641,7 @@ def _fire_ip3_hook(pipeline_state: dict) -> None:
 def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
     """
     Derive DSCR, leverage, and current-ratio covenants from the financial
-    agent's sidecar and INSERT them as Covenant rows.  Uses the latest
-    fiscal year found in Agent Notes/financial_ratios.json.
+    agent's sidecar (financial_ratios.json) with SQL table fallback.
     D-3: all exceptions logged as warnings — never raises.
     """
     _COVENANT_THRESHOLDS = [
@@ -1642,27 +1650,68 @@ def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
         ("leverage_ratio", "Leverage (Debt/EBITDA)",   5.00, "lte", "x",  "Total Leverage ≤ 5.0x"),
         ("current_ratio",  "Current Ratio",            1.00, "gte", "x",  "Current Ratio ≥ 1.0x"),
     ]
+
+    # ── 1. Try sidecar JSON first ─────────────────────────────────────────────
+    latest_year_data: dict | None = None
     try:
         raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
         ratios: dict = json.loads(raw)
+        for _yk in sorted(ratios.keys(), reverse=True):
+            _yd = ratios[_yk]
+            if isinstance(_yd, dict):
+                latest_year_data = _yd
+                break
     except Exception:
-        logger.debug("IP3[covenants]: Agent Notes/financial_ratios.json absent — skipping covenant INSERT")
-        return
+        logger.debug("IP3[covenants]: Agent Notes/financial_ratios.json absent")
 
-    # Pick the latest fiscal year key
-    latest_year_data: dict | None = None
-    for _yk in sorted(ratios.keys(), reverse=True):
-        _yd = ratios[_yk]
-        if isinstance(_yd, dict):
-            latest_year_data = _yd
-            break
+    # ── 2. SQL fallback when sidecar is absent or all target keys are null ────
+    entity_id = pipeline_state.get("entity_id") or ""
+    if entity_id and (
+        latest_year_data is None
+        or all(latest_year_data.get(k) is None
+               for k, *_ in _COVENANT_THRESHOLDS)
+    ):
+        logger.debug(
+            "IP3[covenants]: sidecar null for all target keys — falling back to SQL financial_ratios"
+        )
+        try:
+            from services.db_factory import get_sql_session
+            from models.sql_models import FinancialRatio
+            from sqlalchemy import select
+            with next(get_sql_session()) as _sess:
+                _row = _sess.execute(
+                    select(FinancialRatio)
+                    .where(FinancialRatio.entity_id == entity_id)
+                    .order_by(FinancialRatio.fiscal_year.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+            if _row:
+                latest_year_data = {
+                    "dscr":           float(_row.dscr) if _row.dscr is not None else None,
+                    "leverage_ratio": float(_row.leverage_ratio) if _row.leverage_ratio is not None else None,
+                    "current_ratio":  float(_row.current_ratio) if _row.current_ratio is not None else None,
+                }
+                logger.debug("IP3[covenants]: loaded ratio fallback from SQL financial_ratios")
+        except Exception as _sqle:
+            logger.warning("IP3[covenants]: SQL financial_ratios fallback failed — %s", _sqle)
+
     if latest_year_data is None:
-        logger.debug("IP3[covenants]: no year data found in financial_ratios.json")
+        logger.debug("IP3[covenants]: no year data available — skipping covenant INSERT")
         return
 
     from services import sql_service
     deal_id         = pipeline_state.get("deal_id") or ""
     pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+
+    # ── 3. Resolve loan_terms_id (Phase 2 target: covenants.loan_terms_id FK) ─
+    loan_terms_id = pipeline_state.get("loan_terms_id") or ""
+    if not loan_terms_id:
+        try:
+            _lt = sql_service.get_loan_terms(deal_id)
+            loan_terms_id = (_lt or {}).get("loan_terms_id", "") or ""
+        except Exception:
+            pass
+
     wrote = 0
     for metric_key, display_metric, threshold, operator, unit, description in _COVENANT_THRESHOLDS:
         actual = latest_year_data.get(metric_key)
@@ -1673,6 +1722,23 @@ def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
         except (TypeError, ValueError):
             continue
         pass_fail = (actual_f >= threshold) if operator == "gte" else (actual_f <= threshold)
+
+        # headroom_pct per Phase 2 target schema: (actual − threshold) / threshold
+        # For gte covenants: positive = headroom, negative = breach
+        # For lte covenants: positive = headroom (threshold > actual), negative = breach
+        if operator == "gte":
+            headroom_pct = round((actual_f - threshold) / threshold, 4) if threshold else None
+        else:
+            headroom_pct = round((threshold - actual_f) / threshold, 4) if threshold else None
+
+        # status ENUM per Phase 2 target schema
+        if not pass_fail:
+            cov_status = "breach"
+        elif headroom_pct is not None and headroom_pct < 0.10:
+            cov_status = "tight"
+        else:
+            cov_status = "compliant"
+
         ok = sql_service.insert_covenant(deal_id, pipeline_run_id, {
             "covenant_type":      "financial",
             "description":        description,
@@ -1681,7 +1747,10 @@ def _ip3_covenants_from_risk(pipeline_state: dict) -> None:
             "threshold_operator": operator,
             "actual_value":       round(actual_f, 4),
             "unit":               unit,
+            "headroom_pct":       headroom_pct,
+            "status":             cov_status,
             "pass_fail":          pass_fail,
+            "loan_terms_id":      loan_terms_id or None,
             "source_agent":       "risk",
         })
         if ok:

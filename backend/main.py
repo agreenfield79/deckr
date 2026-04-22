@@ -20,6 +20,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("deckr")
 
+# Suppress Neo4j schema-warning notifications (relationship types not yet created —
+# expected when enrichment is disabled or no data has been written via enrichment_service).
+logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
+
 # Fail fast — backend is non-functional without IBM credentials
 if not os.getenv("IBMCLOUD_API_KEY"):
     logger.error("IBMCLOUD_API_KEY is not set. Add it to backend/.env before starting.")

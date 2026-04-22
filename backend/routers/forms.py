@@ -87,14 +87,14 @@ def _write_loan_terms_json(request: LoanRequest) -> None:
                 ads = round(principal / amortization_years, 2)
 
         lt: dict = {
-            "loan_amount": float(request.loan_amount) if request.loan_amount else None,
-            "interest_rate": rate_decimal or None,
-            "rate_type": request.loan_type or None,
-            "amortization_years": amortization_years if request.amortization_months else None,
-            "term_months": request.term_months or None,
+            "loan_amount":                  float(request.loan_amount) if request.loan_amount else None,
+            "loan_type":                    request.loan_type or None,       # term / revolver / LOC / SBA / bridge
+            "interest_rate":               rate_decimal or None,
+            "rate_type":                   "fixed",                           # fixed / floating — default fixed; update when floating-rate toggle added
+            "amortization_years":          amortization_years if request.amortization_months else None,
+            "term_months":                 request.term_months or None,
             "proposed_annual_debt_service": ads,
-            "revolver_availability": float(request.loan_amount) if request.loan_type == "LOC" else None,
-            "covenant_definitions": None,
+            "revolver_availability":       float(request.loan_amount) if request.loan_type == "LOC" else None,
         }
         # Strip None values for a clean file
         lt = {k: v for k, v in lt.items() if v is not None}

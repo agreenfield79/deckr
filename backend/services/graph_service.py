@@ -24,7 +24,17 @@ def _run(cypher: str, params: dict | None = None) -> list[dict] | None:
     try:
         with driver.session() as session:
             result = session.run(cypher, params or {})
-            return [dict(record) for record in result]
+            records = [dict(record) for record in result]
+            # Suppress expected schema warnings (relationship type / label not yet created).
+            # Use `or []` in addition to the getattr default because some Neo4j driver versions
+            # set result.consume().notifications = None rather than an empty list.
+            for notif in (getattr(result.consume(), "notifications", None) or []):
+                code = getattr(notif, "code", "")
+                if "NotExist" in code or "does not exist" in (getattr(notif, "description", "") or ""):
+                    logger.debug("Neo4j schema notice (expected): %s", getattr(notif, "description", ""))
+                else:
+                    logger.warning("Neo4j notification: %s", getattr(notif, "description", ""))
+            return records
     except Exception as exc:
         logger.warning("Cypher query failed: %s", exc)
         return None

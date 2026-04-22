@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Trash2, Upload } from 'lucide-react'
+import { Plus, Trash2, Upload, RotateCcw } from 'lucide-react'
 import FormField from './FormField'
 import { getBorrower, saveBorrower } from '../api/forms'
 import { useProject } from '../context/ProjectContext'
@@ -80,6 +80,11 @@ export default function BorrowerForm() {
   const loadSample = () => {
     setForm({ ...emptyBorrower(), ...NVIDIA_BORROWER })
     toast.success('NVIDIA sample data loaded — review and save to confirm')
+  }
+
+  const handleClear = () => {
+    setForm(emptyBorrower())
+    toast.success('Form cleared')
   }
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -281,6 +286,15 @@ export default function BorrowerForm() {
         >
           <Upload size={14} />
           Import from JSON
+        </button>
+
+        <button
+          type="button"
+          onClick={handleClear}
+          className="flex items-center gap-1.5 px-4 py-2 bg-white border border-[#da1e28] text-[#da1e28] text-sm font-medium rounded hover:bg-[#fff1f1] transition-colors"
+        >
+          <RotateCcw size={14} />
+          Clear
         </button>
       </div>
     </form>

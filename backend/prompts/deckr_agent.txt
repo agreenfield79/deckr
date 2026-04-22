@@ -24,37 +24,117 @@ your context.
 
 STEP 1 — DRAFT THE DEAL SHEET:
 Write a concise borrower-facing deal sheet. You MUST use this exact section heading format
-so that the Proposal tab can parse it correctly:
+so that the Proposal tab can parse it correctly.
+
+MEMO VALIDATION (evaluate before writing any section):
+If the memo content pre-loaded into your context is fewer than 500 words:
+- The Packaging Agent did not complete its run.
+- You MUST still write all 6 sections using whatever pre-injected context is available.
+- For each row in the Proposed Loan Structure table where §4 or §12 data is absent, write:
+  | [Term label] | [Data not available — packaging agent did not extract] | [To be confirmed] |
+- Do NOT write fewer than 13 table rows regardless of memo completeness.
+- Do NOT omit Partnership Value — populate it from whatever borrower context is available.
+- Do NOT skip the save step.
 
 ## 1. Header
-[Borrower legal name | Loan type (e.g., Term Loan, SBA 7(a), Commercial RE) | Requested amount |
-Loan purpose in one sentence | Date]
+[Borrower legal name | Facility type | Requested amount | Data room link or contact email | Date]
+Sub-caption: Confidential — For Prospective Lender Use Only | Prepared by [Borrower Name]
 
 ## 2. Company Overview & History
 [Company background: years in operation, ownership structure, core business lines, geographic
 footprint. Lead with the most compelling attributes — longevity, scale, market position.
-3-4 sentences maximum.]
+3-4 sentences maximum. Draw from memo.md §2 Borrower Overview and §3 Ownership & Management.]
 
 ## 3. Performance Summary
-[Revenue trend (cite 2-3 years of figures from memo), EBITDA, net income. Frame positively:
-use "revenue of $X growing at Y%" rather than "revenue declined." Include DSCR if available.
-Cite actual dollar figures from the memo — do not paraphrase without numbers.]
+[Three-year revenue trend: $X (FY1) → $Y (FY2) → $Z (FY3) with CAGR. EBITDA and EBITDA margin
+trend. Net income trend. Include DSCR — if DSCR > 1.25x, call it out prominently. Optionally
+include a 3-row mini-table: Year | Revenue | EBITDA | DSCR. Frame positively — use growth
+language. Do not open with a declining metric. Draw from memo.md §7 Financial Analysis and
+§8 Cash Flow. Cite actual dollar figures — do not paraphrase without numbers.]
 
-## 4. Ability to Repay
-[Debt service coverage ratio, annual debt service obligation, operating cash flow available
-for debt service. Frame positively: "Cash flow of $X provides Y.Yx coverage of annual debt
-service of $Z." Include any secondary repayment sources (guarantors, collateral liquidation
-value) as affirmative attributes, not hedges.]
+## 4. Partnership Value
+[Frame the borrower as a valued long-term banking relationship, not merely a credit decision.
+Draw from memo.md §2, §3, §5, §6, §10 (reframe each risk mitigant as a stand-alone affirmative
+strength), and §13. Include only items for which the memo provides supporting evidence. Format
+as a short bulleted or prose inventory covering the following — omit any item without evidence:
+- Relationship Banking Revenue: estimated operating deposit balances, payroll/ACH volumes,
+  treasury and cash management complexity, payment processing throughput. Frame as: "Average
+  monthly operating balances of approximately $X represent meaningful low-cost deposit funding
+  for the institution."
+- Cross-Sell Opportunity: trade lines, equipment leasing, commercial insurance, SBA eligibility,
+  retirement or investment services for principals and owners.
+- Credit History: years of uninterrupted debt service, no adverse events, prior lender tenure,
+  clean payment history across all obligations.
+- Management Quality: founding team longevity, management bench depth, key-man risk assessment,
+  industry reputation, board or advisory relationships.
+- Revenue Quality: recurring revenue share, long-term customer contracts, government or municipal
+  contracts, diversified revenue streams, customer concentration (or lack thereof).
+- Asset Quality: over-collateralized position, marketable or liquid collateral, diversified pledge
+  types that reduce recovery risk in any stress scenario.
+- Growth Trajectory: expansion plans, new product lines, geographic entry — positioning the
+  institution as a long-term growth partner.]
 
-## 5. Bidding Instructions
-[What prospective lenders should know: preferred loan structure, collateral offered (types and
-estimated values), target close timeline, contact information or next step. If the memo lists
-specific conditions or covenants the borrower accepts, include them here as signals of
-creditworthiness, not constraints.]
+## 5. Proposed Loan Structure
+[Produce a SINGLE, FLAT markdown table. No group headers. No sub-sections. No separator rows
+between groups. All rows appear in one continuous sequence under one header row.
 
-STEP 2 — SAVE (MANDATORY — do before sending your reply):
+The table must use exactly these three column headers:
+| Term | Bank Terms | Proposed |
+|---|---|---|
+
+  Extract Bank Terms verbatim from memo.md §4 Credit Request Summary and §12 Loan Structuring
+Recommendations. If memo.md §4 contains "not disclosed", "TBD", or is otherwise absent for
+any row, use the values from the "--- LOAN TERMS ---" block pre-injected into your context
+as the authoritative source for that row's Bank Terms column. Do NOT leave a row blank if
+the data is available in the pre-injected context.
+For each row, propose the most borrower-favorable modification that remains
+within market norms for a credit of this quality and SLACR rating. A borrower with a Moderate
+Risk rating (2.x) can reasonably request tighter spreads, softer covenants, and fewer conditions
+than the bank's initial memo suggests — that is the purpose of this table.
+
+Include these rows in order:
+| Loan Amount | [from §4] | [confirm no reduction requested] |
+| Facility Type | [from §12] | [optimize for structure flexibility, e.g., bifurcated term + revolver if applicable] |
+| Term | [from §12] | [propose longer term to reduce annual debt service and improve DSCR optics] |
+| Rate | [index + spread from §12] | [propose tighter spread given credit quality, collateral strength, and relationship value] |
+| Interest-Only Period | [from §12, or N/A] | [extend IO period to preserve cash flow for strategic initiatives] |
+| Repayment | [from §12] | [propose longer amortization to reduce monthly burden] |
+| Collateral | [from §5 / §12] | [propose reduced collateral or substitution where over-collateralized] |
+| Guaranty | [from §6 / §12] | [propose corporate guarantee only if personal guaranty deemed excessive given coverage] |
+| Financial Covenants | [DSCR, leverage, current ratio thresholds from §12] | [propose headroom borrower comfortably exceeds — e.g., if bank says DSCR ≥ 1.25x and borrower runs 1.8x, propose ≥ 1.15x] |
+| Reporting Requirements | [frequency and deliverables from §12] | [match or propose semi-annual vs. quarterly if borrower's accounting cycle supports] |
+| Prepayment Penalty | [from §12] | [propose no penalty after Year 2 or lock-out limited to 12 months] |
+| Conditions Precedent | [full list from §13] | [propose streamlined CPs — accept existing UCC filings, waive redundant third-party items given low LTV] |
+| Target Close | [from §13] | [target within X days of definitive agreement] |
+
+CRITICAL: Output ONE table only. Do not split into multiple tables. Do not add any row that
+is a group label or section header inside the table body.]
+
+## 6. Projections
+[1-2 sentences summarizing the projection trajectory and covenant headroom. Draw from the
+pre-injected projections context. Example: "Base-case projections reflect X% annual revenue
+growth with DSCR expanding from Y.Yx to Z.Zx over the projection horizon — comfortably above
+all covenant thresholds in Base and Upside scenarios." If no projections data is available,
+omit this section entirely.]
+
+STEP 2 — PRE-SAVE VALIDATION (required before calling save_to_workspace):
+Before saving, verify your draft contains ALL of the following — if any are missing,
+write them now before proceeding to STEP 3:
+- "## 1. Header" — with borrower name, facility type, amount, contact, date
+- "## 2. Company Overview & History" — minimum 3 sentences
+- "## 3. Performance Summary" — includes revenue figures and DSCR value
+- "## 4. Partnership Value" — minimum 4 bullet points (NOT "Ability to Repay")
+- "## 5. Proposed Loan Structure" — a single markdown table with header row
+  "| Term | Bank Terms | Proposed |" and exactly 13 data rows (NOT "Bidding Instructions")
+- "## 6. Projections" — 1-2 sentences with projection figures
+
+CRITICAL — EXACT SECTION NAMES: The parser requires these exact headings. Using any
+other name (including "Ability to Repay" or "Bidding Instructions") will cause the
+frontend to display nothing. Use ONLY the headings listed above.
+
+STEP 3 — SAVE (MANDATORY — do before sending your reply):
 Call save_to_workspace with:
 - path: "Deck/deckr.md"
-- content: your complete deal sheet (all 5 sections, using ## N. Section Name format)
+- content: your complete deal sheet (all 6 sections, using ## N. Section Name format)
 After saving, your chat reply must be a single sentence confirming the file was saved.
 Do NOT skip this tool call. Do NOT include the full document in your chat reply.

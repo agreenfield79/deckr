@@ -253,6 +253,27 @@ async def _serpapi_people_pass(deal_id: str, entities: list[dict], result: dict)
                         description=kg.get("description", ""),
                     )
                     profiles_found += 1
+
+                    # Wire AFFILIATED_WITH: extract employer/company from knowledge graph.
+                    # SerpAPI kg.attributes may contain: "Employer", "Company", "Organization"
+                    kg_attrs = kg.get("attributes") or {}
+                    employer = (
+                        kg_attrs.get("Employer")
+                        or kg_attrs.get("Company")
+                        or kg_attrs.get("Organization")
+                    )
+                    if employer:
+                        company_id = hashlib.md5(employer.encode()).hexdigest()[:16]
+                        graph_service.write_external_company_node(
+                            company_id=company_id,
+                            legal_name=employer,
+                            deal_id=deal_id,
+                        )
+                        graph_service.write_affiliated_with_edge(
+                            entity_id=ent["entity_id"],
+                            company_id=company_id,
+                            title=kg.get("type"),  # e.g. "Entrepreneur", "CEO", "Co-founder"
+                        )
                 await asyncio.sleep(0.5)
             except Exception as exc:
                 logger.warning("[enrichment] SerpAPI people failed entity=%s — %s", name, exc)
@@ -326,9 +347,11 @@ async def _opencorporates_pass(deal_id: str, entities: list[dict], result: dict)
         return
 
     companies_found = 0
+    affiliated_count = 0
     headers = {"Authorization": f"Token token={_OPENCORP_KEY}"}
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
+        # ── Pass 1: Company search ────────────────────────────────────────────
         for ent in entities:
             if ent["entity_type"] not in ("borrower_company", "operating_company"):
                 continue
@@ -359,7 +382,6 @@ async def _opencorporates_pass(deal_id: str, entities: list[dict], result: dict)
                         company_id=company_id,
                         legal_name=co_name,
                         jurisdiction=co.get("jurisdiction_code"),
-                        officers=[o.get("name") for o in (co.get("officers") or [])],
                         deal_id=deal_id,
                     )
                     companies_found += 1
@@ -367,8 +389,59 @@ async def _opencorporates_pass(deal_id: str, entities: list[dict], result: dict)
             except Exception as exc:
                 logger.warning("[enrichment] OpenCorporates failed entity=%s — %s", name, exc)
 
+        # ── Pass 2: Individual → ExternalCompany affiliation via officer search ──
+        # Uses GET /officers/search?q={name} to find registry-confirmed company
+        # affiliations for each guarantor or key principal in the deal.
+        for ent in entities:
+            if ent["entity_type"] not in ("guarantor_individual", "key_principal"):
+                continue
+            name = ent["legal_name"]
+            if not name:
+                continue
+            try:
+                resp = await client.get(
+                    f"{_OPENCORP_BASE}/officers/search",
+                    params={"q": name, "per_page": 3},
+                )
+                if resp.status_code in (401, 403):
+                    logger.info("[enrichment] OpenCorporates officers: auth required — skipping")
+                    break
+                resp.raise_for_status()
+                officers_data = resp.json()
+                officers = (officers_data.get("results") or {}).get("officers") or []
+                for off_wrap in officers[:3]:
+                    off = off_wrap.get("officer") or off_wrap
+                    co_obj = off.get("company") or {}
+                    co_name = co_obj.get("name") or ""
+                    if not co_name:
+                        continue
+                    company_id = co_obj.get("company_number") or hashlib.md5(
+                        co_name.encode()
+                    ).hexdigest()[:16]
+                    from services import graph_service
+                    graph_service.write_external_company_node(
+                        company_id=company_id,
+                        legal_name=co_name,
+                        jurisdiction=co_obj.get("jurisdiction_code"),
+                        deal_id=deal_id,
+                    )
+                    graph_service.write_affiliated_with_edge(
+                        entity_id=ent["entity_id"],
+                        company_id=company_id,
+                        title=off.get("position"),
+                        since=str(off.get("start_date") or ""),
+                    )
+                    affiliated_count += 1
+                await asyncio.sleep(0.5)
+            except Exception as exc:
+                logger.warning(
+                    "[enrichment] OpenCorporates officer search failed entity=%s — %s", name, exc
+                )
+
     result["passes"]["opencorporates"] = {
-        "status": "complete", "companies_found": companies_found
+        "status": "complete",
+        "companies_found": companies_found,
+        "affiliated_edges": affiliated_count,
     }
 
 
