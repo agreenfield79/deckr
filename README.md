@@ -1,7 +1,5 @@
 # Deckr
 
-**Prepare for Capital. Powered by Watson.**
-
 🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
 
 Deckr is a **multi-agent AI workspace** for commercial borrowers preparing for a capital or debt raise.
