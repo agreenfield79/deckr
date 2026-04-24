@@ -2,6 +2,8 @@
 
 **Prepare for Capital. Powered by Watson.**
 
+🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
+
 Deckr is a multi-agent AI workspace that automates the preparation of commercial underwriting packages at the start of a capital or debt raise. 
 
 A borrower uploads their financial documents, answers two structured intake forms, and Deckr's 10-agent AI pipeline produces a complete credit memorandum and a deal sheet structured for capital markets in a single automated run.
@@ -118,17 +120,17 @@ Without Docker the backend defaults to SQLite + NetworkX in-memory. MongoDB stil
 ngrok exposes the local backend to IBM watsonx Orchestrate so agent tool calls can reach `localhost:8000` from IBM's cloud. Required when running the backend locally; **not needed for Track B (GCP Cloud Run)** since the Cloud Run service is publicly reachable.
 
 ```powershell
-ngrok http --domain=dissuade-freckles-cornea.ngrok-free.dev 8000
+ngrok http --domain=<your-ngrok-static-domain> 8000
 ```
 
-Set `NGROK_DOMAIN=https://dissuade-freckles-cornea.ngrok-free.dev` in `backend/.env`.
+Set `NGROK_DOMAIN=https://<your-ngrok-static-domain>` in `backend/.env`.
 
 In the Orchestrate UI (`Tools → [toolkit] → server URL`), set the active server to the ngrok domain (Track A) or the Cloud Run URL (Track B). Only one can be active at a time — switching is a single field edit, no re-import required.
 
 | Track | Orchestrate toolkit server URL |
 |---|---|
-| A — local | `https://dissuade-freckles-cornea.ngrok-free.dev` |
-| B — cloud | `https://deckr-backend-577483911306.us-central1.run.app` |
+| A — local | `https://<your-ngrok-static-domain>` |
+| B — cloud | `https://<your-cloud-run-url>.run.app` |
 
 ---
 
@@ -199,8 +201,3 @@ VITE_API_BASE_URL=        # http://localhost:8000
 
 ---
 
-## Status
-
-Full 10-agent pipeline is running end-to-end and demo-ready. Auth (A-10) is the hard gate before any public or multi-user deployment. Track B (GCP cloud deployment) is entirely pending.
-
-See `README_NEW.md` for the complete technical reference, or `admin/` for implementation plans, database schemas, and deployment guides.
