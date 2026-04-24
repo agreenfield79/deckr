@@ -6,13 +6,21 @@
 
 Deckr is a **multi-agent AI workspace** for commercial borrowers preparing for a capital or debt raise.
 
-**Upload. Answer two forms. Get a deal package.**
+Upload docs → Answer two forms → **10 agents. Complete package. ~5 minutes.**
 
-A borrower submits their financial documents and completes two structured intake forms. Deckr's **10-agent AI pipeline** runs automatically and produces:
+A borrower runs the pipeline and gets:
 - A **13-section credit memorandum** written from the lender's perspective
 - An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and built to attract competitive bids
 
 **Built by Bankers. Powered by Watson.**
+
+---
+
+## Demo
+
+![Deckr UI — Deckr tab showing optimized term sheet output](docs/demo.png)
+
+🎬 **Full walkthrough: [YouTube Demo](https://www.youtube.com/watch?v=50bChirvvTo)**
 
 ---
 
@@ -33,7 +41,7 @@ Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk �
 | Interpreter | `Agent Notes/neural_slacr.md` |
 | Packaging | `Deck/deck.md` (13-section credit memo) |
 | Review | `Agent Notes/review_notes.md` |
-| Deckr | `Deck/deckr.md` (borrower-facing deal sheet) |
+| Deckr | `Deck/deckr.md` (optimized term sheet) |
 
 All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock).
 
@@ -78,6 +86,22 @@ borrower-underwriting-workspace/
 See **[`backend/README.md`](backend/README.md)** for backend setup, environment variables, Docker stack, and ngrok configuration.
 
 See **[`frontend/README.md`](frontend/README.md)** for frontend setup and build instructions.
+
+---
+
+## Acknowledgements
+
+Built with [IBM watsonx Orchestrate](https://www.ibm.com/products/watsonx-orchestrate) and [IBM watsonx.ai](https://www.ibm.com/products/watsonx-ai).
+
+Agent orchestration powered by the watsonx Orchestrate ADK. Language models served via AWS Bedrock (GPT-OSS 120B). Embeddings via `ibm/slate-125m-english-rtrvr-v2`.
+
+---
+
+## License
+
+© 2025 Alan Greenfield. All rights reserved.
+
+This repository is made available for review and evaluation purposes only. No part of this codebase may be reproduced, distributed, or used without explicit written permission from the author.
 
 ---
 
