@@ -4,7 +4,7 @@
 
 🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
 
-Deckr is a multi-agent AI workspace that automates the preparation of commercial underwriting packages at the start of a capital or debt raise. 
+Deckr is a multi-agent AI workspace that automates the preparation of commercial underwriting packages at the start of a capital or debt raise.
 
 A borrower uploads their financial documents, answers two structured intake forms, and Deckr's 10-agent AI pipeline produces a complete credit memorandum and a deal sheet structured for capital markets in a single automated run.
 
@@ -31,9 +31,9 @@ Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk �
 | Review | `Agent Notes/review_notes.md` |
 | Deckr | `Deck/deckr.md` (borrower-facing deal sheet) |
 
-All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock). Direct-path fallback: `ibm/granite-3-8b-instruct` / `meta-llama/llama-3-3-70b-instruct`.
+All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock).
 
-**SLACR:** `(S×0.20) + (L×0.20) + (A×0.25) + (C×0.15) + (R×0.20)` — 1 (Low) → 5 (Decline)
+**SLACR:** `(S×0.20) + (L×0.20) + (A×0.25) + (C×0.15) + (R×0.20)` — 1 (Low) → 5 (Decline). See [`frameworks/Credit_Risk_Framework.md`](frameworks/Credit_Risk_Framework.md).
 
 ---
 
@@ -46,7 +46,7 @@ All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock
 | AI | IBM watsonx.ai — GPT-OSS-120B · `ibm/slate-125m-english-rtrvr-v2` (embeddings) |
 | Orchestration | IBM watsonx Orchestrate via ADK — 10 agents, 14 tool handlers |
 | SQL | SQLite (local) → Cloud SQL PostgreSQL 15 + pgvector (cloud) — 30 tables, 7 views |
-| Document Store | MongoDB Docker (local) → GCP Firestore (cloud) — 14 collections |
+| Document Store | MongoDB Docker (local) → MongoDB Atlas (cloud) — 14 collections |
 | Graph | Neo4j Docker / NetworkX fallback (local) → AuraDB (cloud) — Layers 5A/5B active |
 | Vectors | ChromaDB (local) → pgvector (cloud) — document chunk RAG |
 | Storage | IBM Cloud Object Storage — bucket `deckr-workspace`, region `us-south` |
@@ -58,136 +58,22 @@ All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock
 
 ```
 borrower-underwriting-workspace/
-├── frontend/              # React 19 — three-pane workspace UI
-│   └── src/
-│       ├── tabs/          # OnboardingTab, LoanRequestTab, DocumentsTab,
-│       │                  # ResearchTab, DeckTab, StatusTab, FinalTab
-│       ├── agents/        # AgentOffice.tsx, AgentWordCloud
-│       └── charts/        # FinancialCharts.tsx (Revenue/EBITDA, Leverage, SLACR Radar)
-├── backend/
-│   ├── routers/           # agent, workspace, forms, upload, tools, risk, financials, ...
-│   ├── services/          # sql_service, mongo_service, graph_service, vector_service, ...
-│   ├── agents/            # <agent>.agent.yaml — Orchestrate ADK definitions
-│   ├── prompts/           # <agent>_agent.txt — system prompts
-│   ├── migrations/        # Alembic 001–011
-│   └── tools_openapi.yaml # OpenAPI spec imported into Orchestrate
-├── frameworks/            # Credit_Risk_Framework.md — SLACR source of truth
-├── admin/                 # Planning docs (implementation plan, DB schemas, deployment)
-├── README.md
-├── README_NEW.md          # Full technical reference (~700 lines)
-└── README_NEW_CONSOLIDATED.md   # This file
+├── backend/       # FastAPI · SQLAlchemy · Alembic · 10 Orchestrate agents
+│                  # See backend/README.md for full structure, setup, and env vars
+├── frontend/      # React 19 · TypeScript · Vite · Tailwind CSS v4
+│                  # See frontend/README.md for full structure and setup
+├── frameworks/    # Credit_Risk_Framework.md — SLACR source of truth
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## Local Development
+## Setup
 
-### Prerequisites
+See **[`backend/README.md`](backend/README.md)** for backend setup, environment variables, Docker stack, and ngrok configuration.
 
-- Python 3.10.11+ · Node.js 18+ · Docker Desktop (optional)
-- IBM Cloud account with watsonx.ai + Orchestrate access
-- ngrok account with a configured static domain
-
-### Quick Start
-
-```powershell
-# Backend
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-cp .env.example .env       # fill in credentials
-alembic upgrade head
-uvicorn main:app --reload --port 8000
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev                # http://localhost:5173
-```
-
-### Optional: Full Docker Stack
-
-```powershell
-docker-compose -f backend/docker-compose.yml up -d
-# PostgreSQL :5432 · MongoDB :27017 · Neo4j :7474/:7687
-```
-
-Without Docker the backend defaults to SQLite + NetworkX in-memory. MongoDB still requires a connection.
-
-### ngrok (Track A — local backend only)
-
-ngrok exposes the local backend to IBM watsonx Orchestrate so agent tool calls can reach `localhost:8000` from IBM's cloud. Required when running the backend locally; **not needed for Track B (GCP Cloud Run)** since the Cloud Run service is publicly reachable.
-
-```powershell
-ngrok http --domain=<your-ngrok-static-domain> 8000
-```
-
-Set `NGROK_DOMAIN=https://<your-ngrok-static-domain>` in `backend/.env`.
-
-In the Orchestrate UI (`Tools → [toolkit] → server URL`), set the active server to the ngrok domain (Track A) or the Cloud Run URL (Track B). Only one can be active at a time — switching is a single field edit, no re-import required.
-
-| Track | Orchestrate toolkit server URL |
-|---|---|
-| A — local | `https://<your-ngrok-static-domain>` |
-| B — cloud | `https://<your-cloud-run-url>.run.app` |
-
----
-
-## Environment Variables
-
-Copy `backend/.env.example` to `backend/.env`:
-
-```
-# IBM Core
-IBMCLOUD_API_KEY=
-WATSONX_PROJECT_ID=
-WATSONX_URL=              # https://us-south.ml.cloud.ibm.com
-WATSONX_API_VERSION=      # 2024-05-31
-
-# Orchestrate (one per agent)
-ORCHESTRATE_BASE_URL=
-ORCHESTRATE_API_KEY=
-ORCHESTRATE_AGENT_ID_EXTRACTION=
-ORCHESTRATE_AGENT_ID_FINANCIAL=
-ORCHESTRATE_AGENT_ID_INDUSTRY=
-ORCHESTRATE_AGENT_ID_COLLATERAL=
-ORCHESTRATE_AGENT_ID_GUARANTOR=
-ORCHESTRATE_AGENT_ID_RISK=
-ORCHESTRATE_AGENT_ID_INTERPRETER=
-ORCHESTRATE_AGENT_ID_PACKAGING=
-ORCHESTRATE_AGENT_ID_REVIEW=
-ORCHESTRATE_AGENT_ID_DECKR=
-
-# Databases
-DB_URL=                   # sqlite:///./data/deckr.db  or  postgresql+psycopg2://...
-MONGO_URL=                # mongodb://localhost:27017
-NEO4J_URL=                # bolt://localhost:7687
-
-# Storage & Routing
-STORAGE_BACKEND=          # local | cloud
-COS_API_KEY=
-COS_BUCKET_NAME=          # deckr-workspace
-WORKSPACE_ROOT=
-
-# External
-SERPAPI_KEY=
-NGROK_DOMAIN=
-
-# Frontend (baked at build time)
-VITE_API_BASE_URL=        # http://localhost:8000
-```
-
-**Feature flags** (boolean strings — defaults shown):
-
-| Flag | Default | Purpose |
-|------|---------|---------|
-| `ENABLE_EXTRACTION` | `true` | 3-pass PDF extraction |
-| `USE_ORCHESTRATE` | `true` | Route agents through Orchestrate |
-| `ENABLE_EMBEDDINGS` | `true` | Semantic retrieval for agent context |
-| `USE_COS` | `false` | IBM COS for file I/O |
-| `ENABLE_WDU` | `false` | watsonx Document Understanding (pending) |
-| `MULTI_TENANT` | `false` | Per-deal filesystem isolation (cloud demo) |
+See **[`frontend/README.md`](frontend/README.md)** for frontend setup and build instructions.
 
 ---
 
@@ -195,9 +81,6 @@ VITE_API_BASE_URL=        # http://localhost:8000
 
 - `backend/.env` and `backend/data/` are gitignored — never committed
 - All IBM API calls are backend-only — credentials never reach the frontend
-- Workspace paths validated against `WORKSPACE_ROOT` (HTTP 403 on escape)
 - Upload allowlist enforced — `.exe` / `.sh` rejected; 50 MB max
-- Rate limiting: 5/min agent · 2/min pipeline · 3/min export
-
----
-
+- All cloud secrets stored in GCP Secret Manager — never in environment files on Cloud Run
+- Cloud Run endpoint is publicly accessible for the demo; `ALLOWED_ORIGINS` will be restricted to known domains post-demo

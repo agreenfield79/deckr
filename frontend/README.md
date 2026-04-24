@@ -1,73 +1,65 @@
-# React + TypeScript + Vite
+# Deckr — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 · TypeScript · Vite · Tailwind CSS v4
 
-Currently, two official plugins are available:
+Three-pane workspace UI: file explorer (left), tabbed content (center), agent control panel (right).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stack
 
-## React Compiler
+| | |
+|---|---|
+| Framework | React 19 + TypeScript + Vite |
+| Styling | Tailwind CSS v4 |
+| Charts | `@carbon/charts-react`, D3, `@visx/*`, Cytoscape.js |
+| Markdown | `react-markdown` + `remark-gfm` |
+| Layout | `react-resizable-panels` |
+| Icons | `lucide-react` |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Structure
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/
+├── agents/        # AgentPanel, AgentOffice, AgentSelector, AgentWordCloud,
+│                  # useAgent.ts, useAgentEvents.ts, AgentActions, AgentMessage
+├── api/           # client.ts, agent.ts, upload.ts, financials.ts, workspace.ts,
+│                  # health.ts, forms.ts, deck.ts, deckr.ts, interpret.ts,
+│                  # pipelineRuns.ts, projections.ts, slacr.ts, status.ts
+├── charts/        # FinancialCharts.tsx, ProjectionsChart.tsx
+├── components/    # DealGraph, ExternalNetworkGraph, RiskConcentrationGraph,
+│                  # FinancialSummaryGrid, PipelineGantt, RiskScoreGauge,
+│                  # LimeExplanationChart, DocumentCoverageHeatmap,
+│                  # DeckrPoster, GraphNodeDrawer, StorageBadge, DevModePanel
+├── context/       # ApiContext, ConfigContext, ProjectContext, ToastContext
+├── editor/        # MarkdownEditor, MarkdownViewer
+├── explorer/      # WorkspaceExplorer, FileTreeNode, ContextMenu, useWorkspace.ts
+├── forms/         # BorrowerForm, LoanForm, FormField
+├── hooks/         # useStatus, useSession, useProject, useSlacrScore
+├── layout/        # AppShell, LeftPane, CenterPane, RightPane
+├── risk/          # SlacrWorksheet, useSlacrScore
+├── tabs/          # OnboardingTab, LoanRequestTab, DocumentsTab, ResearchTab,
+│                  # DeckTab, DeckrTab, ProposalTab, FinalTab, StatusTab,
+│                  # InterpretTab, SlacrWorksheet, TabBar
+└── types/         # agent.ts, forms.ts, slacr.ts, workspace.ts
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Key Notes
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `api/client.ts` — all API calls prepend `_baseUrl` from `VITE_API_BASE_URL`; `upload.ts` and `agent.ts` use `getApiBaseUrl()` directly for multipart/streaming requests
+- `useAgentEvents.ts` — SSE connection uses `VITE_SSE_BASE_URL || 'http://localhost:8000'` (uses `||` not `??` — intentional, handles empty string from `.env.production`)
+- Build script uses `vite build` only (no `tsc -b`) — esbuild transpiles without type-check pass
+- `.npmrc` sets `legacy-peer-deps=true` for React 19 / `@visx` peer compatibility
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Local Dev
+
+```powershell
+npm install
+npm run dev     # http://localhost:5173
 ```
+
+## Production Build
+
+```powershell
+npm run build   # outputs to dist/
+```
+
+Set `VITE_API_BASE_URL` and `VITE_SSE_BASE_URL` in `.env.local`.
