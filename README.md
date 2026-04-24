@@ -12,7 +12,7 @@ A borrower submits their financial documents and completes two structured intake
 - A **13-section credit memorandum** written from the lender's perspective
 - An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and built to attract competitive bids
 
-The pipeline sequences output intentionally — the Packaging Agent builds the full credit memo first, then the Deckr Agent reads it the way a bank credit officer would before structuring the ask. Covenant positions, collateral coverage, and risk mitigants are surfaced in a form calibrated to invite competitive term sheets.
+**Built by Bankers. Powered by Watson.**
 
 ---
 
