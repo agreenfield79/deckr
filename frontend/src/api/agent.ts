@@ -1,4 +1,4 @@
-import { get, post } from './client'
+import { get, post, getApiBaseUrl } from './client'
 import type { AgentInfo, AgentRequest, AgentResponse, PipelineEvent } from '../types/agent'
 
 export const getRegistry = (): Promise<AgentInfo[]> =>
@@ -31,7 +31,7 @@ export async function runPipeline(
   onEvent: (event: PipelineEvent) => void,
   message = '',
 ): Promise<void> {
-  const url = '/api/agent/pipeline'
+  const url = `${getApiBaseUrl()}/api/agent/pipeline`
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
