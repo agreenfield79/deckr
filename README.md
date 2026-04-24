@@ -4,11 +4,15 @@
 
 🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
 
-Deckr is a multi-agent AI workspace that automates the preparation of commercial underwriting packages at the start of a capital or debt raise.
+Deckr is a **multi-agent AI workspace** for commercial borrowers preparing for a capital or debt raise.
 
-A borrower uploads their financial documents, answers two structured intake forms, and Deckr's 10-agent AI pipeline produces a complete credit memorandum and a deal sheet structured for capital markets in a single automated run.
+**Upload. Answer two forms. Get a deal package.**
 
-The pipeline is designed not just to document the deal, but to generate an attractive structure on behalf of commercial borrowers. The Packaging Agent first constructs the full 13-section credit memorandum. The Deckr Agent then consumes that output — seeing the deal the way a bank credit officer would — before structuring the ask. This sequencing surfaces covenant positions, collateral coverage, and risk mitigants in a form calibrated to invite competitive term sheets.
+A borrower submits their financial documents and completes two structured intake forms. Deckr's **10-agent AI pipeline** runs automatically and produces:
+- A **13-section credit memorandum** written from the lender's perspective
+- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and built to attract competitive bids
+
+The pipeline sequences output intentionally — the Packaging Agent builds the full credit memo first, then the Deckr Agent reads it the way a bank credit officer would before structuring the ask. Covenant positions, collateral coverage, and risk mitigants are surfaced in a form calibrated to invite competitive term sheets.
 
 ---
 
@@ -33,7 +37,7 @@ Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk �
 
 All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock).
 
-**SLACR:** `(S×0.20) + (L×0.20) + (A×0.25) + (C×0.15) + (R×0.20)` — 1 (Low) → 5 (Decline). See [`frameworks/Credit_Risk_Framework.md`](frameworks/Credit_Risk_Framework.md).
+**SLACR:** See [`frameworks/Credit_Risk_Framework.md`](frameworks/Credit_Risk_Framework.md).
 
 ---
 
