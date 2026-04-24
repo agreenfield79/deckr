@@ -1,4 +1,4 @@
-import { get } from './client'
+import { get, getApiBaseUrl } from './client'
 
 export interface UploadedFile {
   name: string
@@ -23,7 +23,9 @@ export async function uploadFile(
   formData.append('file', file)
   formData.append('category', category)
   // Use raw fetch — browser must set Content-Type with multipart boundary automatically
-  const res = await fetch('/api/upload', { method: 'POST', body: formData })
+  // Must use getApiBaseUrl() to resolve against Cloud Run in production, not Vercel domain
+  const base = getApiBaseUrl()
+  const res = await fetch(`${base}/api/upload`, { method: 'POST', body: formData })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `Upload failed (${res.status})`)
