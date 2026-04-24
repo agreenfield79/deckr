@@ -12,18 +12,29 @@ info:
     router (POST /api/tools/{tool_name}) running behind an ngrok tunnel during
     development and IBM Code Engine in production.
 
-    IMPORTANT — ngrok URL changes every session. Before re-importing this spec
-    into Orchestrate, update servers[0].url below with the current ngrok URL,
-    then re-import and re-attach all tools to agents.
+    ACTIVE SERVER — Orchestrate always uses servers[0].url.
+    Switch between Track A (local/ngrok) and Track B (GCP Cloud Run) by
+    moving the desired entry to the top of the servers list, then
+    re-import this spec into Orchestrate and re-attach all tools to agents.
+
+    Track A (local dev): ensure ngrok tunnel is running before importing.
+      ngrok http --domain=dissuade-freckles-cornea.ngrok-free.dev 8000
+    Track B (cloud): Cloud Run service is always-on — no tunnel required.
 
 servers:
-  - url: https://dissuade-freckles-cornea.ngrok-free.dev
+  # Orchestrate requires exactly ONE server entry.
+  # To switch tracks, replace the url below and re-run:
+  #   orchestrate tools import -k openapi -f tools_openapi.yaml
+  #
+  # Track B (cloud, active):
+  #   https://deckr-backend-577483911306.us-central1.run.app
+  # Track A (local dev — start ngrok first):
+  #   https://dissuade-freckles-cornea.ngrok-free.dev
+  - url: https://deckr-backend-577483911306.us-central1.run.app
     description: >
-      Local development tunnel (ngrok static domain — persistent, does not
-      change between sessions). Start the tunnel with:
-        ngrok http --domain=dissuade-freckles-cornea.ngrok-free.dev 8000
-      For Code Engine production deployment, replace with the Code Engine
-      application URL (Phase 23).
+      Track B — GCP Cloud Run (deployed, always-on).
+      Active server for cloud demo deployment.
+      Revision: deckr-backend-00002-8k8 (2026-04-24).
 
 paths:
 

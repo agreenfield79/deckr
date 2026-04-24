@@ -13,6 +13,30 @@ from uuid import uuid4
 
 logger = logging.getLogger("deckr.mongo_service")
 
+# ---------------------------------------------------------------------------
+# Retry decorator — mirrors sql_service._sql_retry pattern (P-3)
+# ---------------------------------------------------------------------------
+
+try:
+    from tenacity import (
+        retry as _tenacity_retry,
+        stop_after_attempt,
+        wait_exponential,
+    )
+
+    def _mongo_retry(fn):
+        """Wrap a callable with 3-attempt exponential-backoff retry on any exception."""
+        return _tenacity_retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+            reraise=True,
+        )(fn)
+
+except ImportError:
+    def _mongo_retry(fn):
+        """No-op fallback if tenacity is not installed."""
+        return fn
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -29,6 +53,7 @@ def _db():
 # extraction_status, extracted_at). Those belong in SQL documents table only.
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def index_document(workspace_id: str, deal_id: str, document_id: str,
                    file_name: str, file_path: str, document_type: str,
                    entity_id: str | None = None,
@@ -77,6 +102,7 @@ def get_document_metadata(deal_id: str | None = None) -> list[dict]:
         return []
 
 
+@_mongo_retry
 def mark_document_read_by_agent(document_id: str, agent_name: str) -> bool:
     """Record that an agent has read a document (agents_read array)."""
     try:
@@ -101,6 +127,7 @@ def mark_document_read_by_agent(document_id: str, agent_name: str) -> bool:
 # No embedding field — vectors are in ChromaDB (local) or pgvector (cloud).
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_document_chunk(document_id: str, deal_id: str, entity_id: str,
                         file_name: str, page_number: int, chunk_index: int,
                         chunk_type: str, text: str) -> bool:
@@ -175,6 +202,7 @@ def get_deal_chunks(deal_id: str) -> list[dict]:
 # Stores pointer + hash only — never the .md content (filesystem is source of truth).
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_agent_edit_history(deal_id: str, agent_name: str,
                             pipeline_run_id: str, output_path: str,
                             content: str, version: int = 1) -> bool:
@@ -229,6 +257,7 @@ def get_agent_edit_history(deal_id: str, agent_name: str) -> list[dict]:
 # Phase 2B: no embedded stages[] — stages go to pipeline_stage_logs.
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def open_pipeline_run(pipeline_run_id: str, deal_id: str,
                       workspace_id: str, total_stages: int,
                       triggered_by: str = "api",
@@ -262,6 +291,7 @@ def open_pipeline_run(pipeline_run_id: str, deal_id: str,
         return False
 
 
+@_mongo_retry
 def append_stage_to_run(pipeline_run_id: str, agent_name: str,
                         stage_order: int, status: str = "complete",
                         elapsed_ms: int = 0,
@@ -302,6 +332,7 @@ def append_stage_to_run(pipeline_run_id: str, agent_name: str,
         return False
 
 
+@_mongo_retry
 def close_pipeline_run(pipeline_run_id: str, status: str = "complete",
                        total_elapsed_ms: int = 0) -> bool:
     """Close the pipeline_runs document — set status + completed_at."""
@@ -388,6 +419,7 @@ def get_pipeline_run_history(deal_id: str | None = None,
 # open_pipeline_run() + close_pipeline_run() already satisfy Phase 2B spec.
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_stage_log(pipeline_run_id: str, deal_id: str, agent_name: str,
                    stage_order: int, status: str,
                    started_at: str | None, completed_at: str | None,
@@ -434,6 +466,7 @@ def save_stage_log(pipeline_run_id: str, deal_id: str, agent_name: str,
 # rag_contexts — per-agent retrieval telemetry (Group D, Phase 2B)
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_rag_context(pipeline_run_id: str, deal_id: str, agent_name: str,
                      stage_order: int, query_text: str,
                      retrieved_chunks: list, final_prompt_hash: str | None = None,
@@ -470,6 +503,7 @@ def save_rag_context(pipeline_run_id: str, deal_id: str, agent_name: str,
 # All write functions follow D-3 pattern: catch exceptions, log, return False.
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_news_article(deal_id: str, entity_ids: list[str],
                       headline: str, body: str, url: str,
                       source: str | None, publish_date: str | None,
@@ -510,6 +544,7 @@ def save_news_article(deal_id: str, entity_ids: list[str],
         return False
 
 
+@_mongo_retry
 def save_court_filing(deal_id: str, entity_ids: list[str],
                       neo4j_action_id: str, case_number: str,
                       court: str, filing_type: str, full_text: str,
@@ -551,6 +586,7 @@ def save_court_filing(deal_id: str, entity_ids: list[str],
         return False
 
 
+@_mongo_retry
 def save_regulatory_action(deal_id: str, entity_ids: list[str],
                             agency: str, action_type: str,
                             full_text: str, summary: str,
@@ -586,6 +622,7 @@ def save_regulatory_action(deal_id: str, entity_ids: list[str],
         return False
 
 
+@_mongo_retry
 def save_press_release(deal_id: str, entity_ids: list[str],
                        title: str, body: str, source_url: str,
                        published_at: str | None = None,
@@ -622,6 +659,7 @@ def save_press_release(deal_id: str, entity_ids: list[str],
         return False
 
 
+@_mongo_retry
 def save_industry_report(naics_code: str, title: str, body: str,
                           published_at: str | None = None,
                           publisher: str | None = None,
@@ -657,6 +695,7 @@ def save_industry_report(naics_code: str, title: str, body: str,
         return False
 
 
+@_mongo_retry
 def save_review(deal_id: str, entity_id: str, platform: str,
                 full_text: str, rating: float | None = None,
                 review_date: str | None = None,
@@ -711,6 +750,7 @@ def save_social_signal(*args, **kwargs) -> bool:
 # AI/ML Layer — model_feedback and prompt_versions (Group D, Phase 2B)
 # ---------------------------------------------------------------------------
 
+@_mongo_retry
 def save_model_feedback(deal_id: str, pipeline_run_id: str, agent_name: str,
                         prediction: str, human_correction: str,
                         correction_type: str, analyst_id: str) -> bool:
@@ -740,6 +780,7 @@ def save_model_feedback(deal_id: str, pipeline_run_id: str, agent_name: str,
         return False
 
 
+@_mongo_retry
 def upsert_prompt_version(agent_name: str, version: str,
                            prompt_template: str, model_id: str,
                            deployed_at: str | None = None,

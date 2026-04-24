@@ -18,6 +18,7 @@ interface ProjectContextValue {
   tree: TreeNode[]
   treeLoading: boolean
   refreshTree: () => Promise<void>
+  readFile: (path: string) => Promise<string>
   writeFile: (path: string, content: string) => Promise<void>
   deleteFile: (path: string) => Promise<void>
   createFolder: (path: string) => Promise<void>
@@ -70,6 +71,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         tree,
         treeLoading,
         refreshTree,
+        readFile,
         writeFile,
         deleteFile,
         createFolder,

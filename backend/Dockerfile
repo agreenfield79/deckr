@@ -18,4 +18,6 @@ RUN mkdir -p data
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Cloud Run injects PORT env var (default 8080). We default to 8000 for local dev.
+# Use shell form so ${PORT:-8000} is expanded at runtime.
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

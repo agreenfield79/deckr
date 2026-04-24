@@ -113,13 +113,22 @@ docker-compose -f backend/docker-compose.yml up -d
 
 Without Docker the backend defaults to SQLite + NetworkX in-memory. MongoDB still requires a connection.
 
-### ngrok (required for Orchestrate tool callbacks)
+### ngrok (Track A — local backend only)
+
+ngrok exposes the local backend to IBM watsonx Orchestrate so agent tool calls can reach `localhost:8000` from IBM's cloud. Required when running the backend locally; **not needed for Track B (GCP Cloud Run)** since the Cloud Run service is publicly reachable.
 
 ```powershell
 ngrok http --domain=dissuade-freckles-cornea.ngrok-free.dev 8000
 ```
 
 Set `NGROK_DOMAIN=https://dissuade-freckles-cornea.ngrok-free.dev` in `backend/.env`.
+
+In the Orchestrate UI (`Tools → [toolkit] → server URL`), set the active server to the ngrok domain (Track A) or the Cloud Run URL (Track B). Only one can be active at a time — switching is a single field edit, no re-import required.
+
+| Track | Orchestrate toolkit server URL |
+|---|---|
+| A — local | `https://dissuade-freckles-cornea.ngrok-free.dev` |
+| B — cloud | `https://deckr-backend-577483911306.us-central1.run.app` |
 
 ---
 

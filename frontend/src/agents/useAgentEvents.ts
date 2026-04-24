@@ -23,7 +23,7 @@ export interface AgentActivityEntry {
 
 export type AgentActivityState = Record<string, AgentActivityEntry>
 
-const SSE_BASE_URL = import.meta.env.VITE_SSE_BASE_URL ?? 'http://localhost:8000'
+const SSE_BASE_URL = import.meta.env.VITE_SSE_BASE_URL || 'http://localhost:8000'
 
 export function useAgentEvents() {
   const [agentActivity, setAgentActivity] = useState<AgentActivityState>({})

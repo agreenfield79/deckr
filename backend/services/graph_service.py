@@ -10,12 +10,37 @@ from typing import Any
 
 logger = logging.getLogger("deckr.graph_service")
 
+# ---------------------------------------------------------------------------
+# Retry decorator — mirrors sql_service._sql_retry pattern (P-3)
+# ---------------------------------------------------------------------------
+
+try:
+    from tenacity import (
+        retry as _tenacity_retry,
+        stop_after_attempt,
+        wait_exponential,
+    )
+
+    def _graph_retry(fn):
+        """Wrap a callable with 3-attempt exponential-backoff retry on any exception."""
+        return _tenacity_retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+            reraise=True,
+        )(fn)
+
+except ImportError:
+    def _graph_retry(fn):
+        """No-op fallback if tenacity is not installed."""
+        return fn
+
 
 def _driver():
     from services.db_factory import get_neo4j_driver
     return get_neo4j_driver()
 
 
+@_graph_retry
 def _run(cypher: str, params: dict | None = None) -> list[dict] | None:
     """Execute a Cypher statement. Returns list of record dicts, or None on failure."""
     driver = _driver()

@@ -303,7 +303,12 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     cov_cols = {col["name"] for col in inspect(op.get_bind()).get_columns("covenants")}
 
-    with op.batch_alter_table("covenants", recreate="always") as batch_op:
+    # recreate="never" for PostgreSQL: fk_ccp_covenant (covenant_compliance_projections
+    # → covenants) is created in migration 002. Recreating covenants would require
+    # dropping covenants_pkey, which PostgreSQL blocks due to that FK dependency.
+    # PostgreSQL supports ADD COLUMN and ALTER COLUMN TYPE natively without recreation.
+    _rb10 = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("covenants", recreate=_rb10) as batch_op:
         if "threshold_operator" not in cov_cols:
             batch_op.add_column(sa.Column("threshold_operator", sa.String(5), nullable=True))
         # Re-declare covenant_type to align DDL with ORM (storage unchanged in SQLite)
@@ -333,12 +338,20 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # 3 & 4 — financial_ratios: CASCADE FK + precision on 10 columns      #
     # ------------------------------------------------------------------ #
-    with op.batch_alter_table("financial_ratios", recreate="always") as batch_op:
-        if _is_postgresql():
-            try:
-                batch_op.drop_constraint("financial_ratios_entity_id_fkey", type_="foreignkey")
-            except Exception:
-                pass
+    # Drop any pre-existing unnamed FK outside the batch (IF EXISTS).
+    # Migration 001 created financial_ratios with no ForeignKey() on entity_id,
+    # so this constraint never exists on Alembic-only deployments. The try/except
+    # inside a batch block does NOT catch errors raised during flush() at __exit__,
+    # so the drop must happen here via raw SQL to be safely idempotent.
+    if _is_postgresql():
+        op.execute(text(
+            "ALTER TABLE financial_ratios "
+            "DROP CONSTRAINT IF EXISTS financial_ratios_entity_id_fkey"
+        ))
+    # recreate="never": use direct ALTER TABLE on PostgreSQL to avoid table
+    # recreation, which could silently drop outbound FKs added in prior migrations.
+    _rb_fr = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("financial_ratios", recreate=_rb_fr) as batch_op:
         batch_op.create_foreign_key(
             "fk_financial_ratios_entity_cascade",
             "entities",
@@ -363,7 +376,11 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # 5 — slacr_scores.internal_rating: VARCHAR(20) → VARCHAR(30)         #
     # ------------------------------------------------------------------ #
-    with op.batch_alter_table("slacr_scores", recreate="always") as batch_op:
+    # recreate="never": slacr_scores has outbound FKs added in migrations 002
+    # and 007 (fk_slacr_entity, fk_slacr_model). Using direct ALTER COLUMN TYPE
+    # avoids risking their loss during full table recreation.
+    _rb_ss = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("slacr_scores", recreate=_rb_ss) as batch_op:
         batch_op.alter_column(
             "internal_rating",
             existing_type=sa.String(20),
@@ -374,7 +391,8 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # 6 — revenue_segments: NUMERIC(8,6) precision                        #
     # ------------------------------------------------------------------ #
-    with op.batch_alter_table("revenue_segments", recreate="always") as batch_op:
+    _rb_rseg = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("revenue_segments", recreate=_rb_rseg) as batch_op:
         batch_op.alter_column(
             "pct_of_total_revenue",
             existing_type=sa.Numeric(),
@@ -391,7 +409,10 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # 7 — projections: NUMERIC(10,4) precision on dscr + funded_debt      #
     # ------------------------------------------------------------------ #
-    with op.batch_alter_table("projections", recreate="always") as batch_op:
+    # recreate="never": projections has outbound FK fk_projections_assumptions
+    # added in migration 006. Direct ALTER COLUMN TYPE avoids recreation risk.
+    _rb_proj = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("projections", recreate=_rb_proj) as batch_op:
         batch_op.alter_column(
             "dscr",
             existing_type=sa.Numeric(),
@@ -432,25 +453,30 @@ def downgrade() -> None:
     op.drop_index("ix_audit_log_deal_timestamp", table_name="audit_log")
 
     # 7
-    with op.batch_alter_table("projections", recreate="always") as batch_op:
+    _rb_proj_dg = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("projections", recreate=_rb_proj_dg) as batch_op:
         batch_op.alter_column("dscr",               existing_type=sa.Numeric(10, 4), type_=sa.Numeric())
         batch_op.alter_column("funded_debt_to_ebitda", existing_type=sa.Numeric(10, 4), type_=sa.Numeric())
 
     # 6
-    with op.batch_alter_table("revenue_segments", recreate="always") as batch_op:
+    _rb_rseg_dg = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("revenue_segments", recreate=_rb_rseg_dg) as batch_op:
         batch_op.alter_column("pct_of_total_revenue", existing_type=sa.Numeric(8, 6), type_=sa.Numeric())
         batch_op.alter_column("yoy_growth",           existing_type=sa.Numeric(8, 6), type_=sa.Numeric())
 
     # 5
-    with op.batch_alter_table("slacr_scores", recreate="always") as batch_op:
+    _rb_ss_dg = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("slacr_scores", recreate=_rb_ss_dg) as batch_op:
         batch_op.alter_column("internal_rating", existing_type=sa.String(30), type_=sa.String(20), nullable=False)
 
     # 4 & 3
-    with op.batch_alter_table("financial_ratios", recreate="always") as batch_op:
-        try:
-            batch_op.drop_constraint("fk_financial_ratios_entity_cascade", type_="foreignkey")
-        except Exception:
-            pass
+    if _is_postgresql():
+        op.execute(text(
+            "ALTER TABLE financial_ratios "
+            "DROP CONSTRAINT IF EXISTS fk_financial_ratios_entity_cascade"
+        ))
+    _rb_fr_dg = "never" if _is_postgresql() else "always"
+    with op.batch_alter_table("financial_ratios", recreate=_rb_fr_dg) as batch_op:
         batch_op.create_foreign_key(
             "fk_financial_ratios_entity_orig",
             "entities",

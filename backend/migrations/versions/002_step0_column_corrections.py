@@ -31,15 +31,75 @@ def _is_postgresql() -> bool:
 
 
 def upgrade() -> None:
-    # ── 3B.0.1 — ENUM drift fixes (PostgreSQL only) ──────────────────────────
+    # ── 3B.0.1 — ENUM bootstrap + drift fixes (PostgreSQL only) ──────────────
+    # Runs in autocommit_block() because:
+    #   (a) CREATE TYPE inside a transaction is fine, but we need autocommit for
+    #       ALTER TYPE ADD VALUE on PG < 12 compatibility.
+    #   (b) For Alembic-only deployments (no init_schema.sql pre-run), the ENUM
+    #       types do not exist yet — the DO block creates them idempotently.
     if _is_postgresql():
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'financial'")
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'collateral'")
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'guarantor'")
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'industry'")
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'packaging'")
-        op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'extraction'")
-        op.execute("ALTER TYPE deal_status ADD VALUE IF NOT EXISTS 'closed'")
+        with op.get_context().autocommit_block():
+            # Create all ENUM types if absent (idempotent — no-op if init_schema.sql
+            # was applied first).
+            op.execute("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'source_agent_type') THEN
+                        CREATE TYPE source_agent_type AS ENUM (
+                            'risk', 'review', 'financial', 'collateral', 'guarantor',
+                            'industry', 'packaging', 'extraction'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deal_status') THEN
+                        CREATE TYPE deal_status AS ENUM (
+                            'draft', 'review', 'approved', 'declined', 'closed'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'extraction_status') THEN
+                        CREATE TYPE extraction_status AS ENUM (
+                            'pending', 'running', 'complete', 'partial', 'failed'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pipeline_status') THEN
+                        CREATE TYPE pipeline_status AS ENUM (
+                            'pending', 'running', 'complete', 'failed', 'partial'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'covenant_status') THEN
+                        CREATE TYPE covenant_status AS ENUM (
+                            'compliant', 'tight', 'breach', 'waived'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contact_type') THEN
+                        CREATE TYPE contact_type AS ENUM (
+                            'primary', 'legal', 'cpa', 'appraiser',
+                            'relationship_manager', 'lender'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'guarantee_type') THEN
+                        CREATE TYPE guarantee_type AS ENUM (
+                            'full', 'limited', 'completion', 'payment', 'performance'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+                        CREATE TYPE user_role AS ENUM (
+                            'analyst', 'underwriter', 'approver', 'admin', 'readonly'
+                        );
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'access_level') THEN
+                        CREATE TYPE access_level AS ENUM ('read', 'write', 'approve');
+                    END IF;
+                END $$;
+            """)
+            # If types already existed (init_schema.sql path), ensure all required
+            # values are present.  These are no-ops when the DO block just created
+            # the types above.
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'financial'")
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'collateral'")
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'guarantor'")
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'industry'")
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'packaging'")
+            op.execute("ALTER TYPE source_agent_type ADD VALUE IF NOT EXISTS 'extraction'")
+            op.execute("ALTER TYPE deal_status ADD VALUE IF NOT EXISTS 'closed'")
 
     # ── 3B.0.2 — Remove wrong-tier columns ───────────────────────────────────
     with op.batch_alter_table("management_guidance") as batch_op:
@@ -55,24 +115,32 @@ def upgrade() -> None:
         batch_op.drop_column("covenant_definitions")
 
     # ── 3B.0.3 — Truncate Text → VARCHAR(255) ────────────────────────────────
-    with op.batch_alter_table("covenants") as batch_op:
+    # recreate="never" forces PostgreSQL to use ALTER COLUMN TYPE directly,
+    # avoiding table recreation which fails when other tables have FKs
+    # referencing these tables' primary keys.
+    _rb = "never" if _is_postgresql() else "auto"
+    with op.batch_alter_table("covenants", recreate=_rb) as batch_op:
         batch_op.alter_column("description", type_=sa.String(255), existing_nullable=True)
 
-    with op.batch_alter_table("collateral") as batch_op:
+    with op.batch_alter_table("collateral", recreate=_rb) as batch_op:
         batch_op.alter_column("description", type_=sa.String(255), existing_nullable=True)
 
-    with op.batch_alter_table("covenant_compliance_projections") as batch_op:
+    with op.batch_alter_table("covenant_compliance_projections", recreate=_rb) as batch_op:
         batch_op.alter_column("trigger_action", type_=sa.String(255), existing_nullable=True)
 
     # ── 3B.0.4 — FK corrections ───────────────────────────────────────────────
     # personal_financial_statements.entity_id — add ON DELETE CASCADE
+    # Use IF EXISTS — constraint may not exist in Alembic-only deployments
+    # where init_schema.sql was never applied.
+    if _is_postgresql():
+        op.execute(
+            "ALTER TABLE personal_financial_statements "
+            "DROP CONSTRAINT IF EXISTS fk_pfs_entity"
+        )
     with op.batch_alter_table("personal_financial_statements") as batch_op:
-        batch_op.drop_constraint("fk_pfs_entity", type_="foreignkey") if _is_postgresql() else None
         batch_op.alter_column("entity_id",
                               existing_type=sa.String(36),
                               nullable=True)
-    # Note: batch mode recreates the table with the new FK for SQLite;
-    # PostgreSQL uses an explicit ALTER TABLE.
     if _is_postgresql():
         op.execute(
             "ALTER TABLE personal_financial_statements "
@@ -163,13 +231,14 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("debt_balance",   sa.Numeric(18, 2), nullable=True))
 
     # pipeline_runs — rename total_duration_seconds → total_elapsed_ms + add columns
-    with op.batch_alter_table("pipeline_runs") as batch_op:
+    # recreate="never" uses RENAME COLUMN (PG 10+) instead of table recreation.
+    with op.batch_alter_table("pipeline_runs", recreate=_rb) as batch_op:
         batch_op.alter_column("total_duration_seconds", new_column_name="total_elapsed_ms")
         batch_op.add_column(sa.Column("triggered_by",    sa.String(50), nullable=True))
         batch_op.add_column(sa.Column("pipeline_version",sa.String(20), nullable=True))
 
     # pipeline_stage_logs — rename duration_seconds → elapsed_ms + add error_code
-    with op.batch_alter_table("pipeline_stage_logs") as batch_op:
+    with op.batch_alter_table("pipeline_stage_logs", recreate=_rb) as batch_op:
         batch_op.alter_column("duration_seconds", new_column_name="elapsed_ms")
         batch_op.add_column(sa.Column("error_code", sa.String(30), nullable=True))
 

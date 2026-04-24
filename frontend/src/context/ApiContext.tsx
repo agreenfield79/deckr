@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { setApiBaseUrl, getApiBaseUrl } from '../api/client'
 
 const LS_KEY = 'deckr:api-base-url'
