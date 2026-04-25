@@ -4,11 +4,11 @@
 
 Deckr is a **multi-agent AI workspace** for commercial borrowers preparing for a capital or debt raise.
 
-Upload docs → Answer two forms → **10 agents. Complete package. ~5 minutes.**
+Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
 
 A borrower runs the pipeline and gets:
 - A **13-section credit memorandum** written from the lender's perspective
-- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and built to attract competitive bids
+- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids. 
 
 **Built by Bankers. Powered by Watson.**
 
@@ -78,6 +78,33 @@ borrower-underwriting-workspace/
 ```
 
 ---
+
+## Quick Start
+
+**Requirements:** Python 3.10.11+ · Node.js 18+ · ngrok account
+
+```powershell
+# 1. Clone the repo
+git clone https://github.com/agreenfield79/deckr.git
+cd deckr
+
+# 2. Backend
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env        # fill in credentials
+alembic upgrade head
+uvicorn main:app --reload --port 8000
+
+# 3. Frontend (new terminal)
+cd frontend
+npm install
+npm run dev                 # http://localhost:5173
+
+# 4. Expose backend to Orchestrate
+ngrok http --domain=<your-ngrok-domain> 8000
+```
 
 ## Setup
 
