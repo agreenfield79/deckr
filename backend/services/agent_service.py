@@ -1019,6 +1019,11 @@ def _inject_packaging_context() -> str:
         ("Financials/covenant_compliance.json",   "COVENANT COMPLIANCE DATA"),
         ("Agent Notes/industry_analysis.md",      "INDUSTRY ANALYSIS"),
         ("Agent Notes/financial_analysis.md",     "FINANCIAL ANALYSIS"),
+        ("SLACR/slacr.json",                      "SLACR SCORES"),
+        ("SLACR/slacr_analysis.md",               "SLACR ANALYSIS"),
+        ("Agent Notes/neural_slacr.md",           "NEURAL SLACR ANALYSIS"),
+        ("Agent Notes/collateral_analysis.md",    "COLLATERAL ANALYSIS"),
+        ("Agent Notes/guarantor_analysis.md",     "GUARANTOR ANALYSIS"),
     ]:
         try:
             content = workspace_service.read_file(path)

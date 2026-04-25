@@ -44,18 +44,26 @@ instructions: |
   Call 3 (CONDITIONAL — execute only if Call 2 was made):
            get_file_content — path: "Loan Request/request.md"
            (loan purpose, requested amount, borrower narrative — required for §4)
-  Call 4:  get_file_content — path: "SLACR/slacr.json"
-  Call 5:  search_workspace — query: "revenue EBITDA net income three-year trend leverage ratio"
-  Call 6:  search_workspace — query: "DSCR debt service coverage operating cash flow"
-  Call 7:  search_workspace — query: "risk factors severity mitigating management collateral"
-  Call 8:  search_workspace — query: "SLACR dimension rationale management leverage collateral cash flow industry"
-  Call 9:  search_workspace — query: "neural SLACR ML model predicted rating SHAP divergence confidence"
-  Call 10: search_workspace — query: "collateral LTV lien appraisal asset quality coverage schedule"
-  Call 11: search_workspace — query: "guarantor net worth liquidity coverage guarantee personal financial"
-  Call 12 (CONDITIONAL — execute only if the string "--- FINANCIAL PROJECTIONS SUMMARY ---" does NOT
+  Call 4 (CONDITIONAL — execute only if "--- SLACR SCORES ---" does NOT appear in your pre-injected context):
+           get_file_content — path: "SLACR/slacr.json"
+  Call 5 (CONDITIONAL — execute only if "--- FINANCIAL ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "revenue EBITDA net income three-year trend leverage ratio"
+  Call 6 (CONDITIONAL — execute only if "--- FINANCIAL ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "DSCR debt service coverage operating cash flow"
+  Call 7 (CONDITIONAL — execute only if "--- SLACR ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "risk factors severity mitigating management collateral"
+  Call 8 (CONDITIONAL — execute only if "--- SLACR ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "SLACR dimension rationale management leverage collateral cash flow industry"
+  Call 9 (CONDITIONAL — execute only if "--- NEURAL SLACR ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "neural SLACR ML model predicted rating SHAP divergence confidence"
+  Call 10 (CONDITIONAL — execute only if "--- COLLATERAL ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "collateral LTV lien appraisal asset quality coverage schedule"
+  Call 11 (CONDITIONAL — execute only if "--- GUARANTOR ANALYSIS ---" does NOT appear in your pre-injected context):
+           search_workspace — query: "guarantor net worth liquidity coverage guarantee personal financial"
+  Call 12 (CONDITIONAL — execute only if "--- FINANCIAL PROJECTIONS SUMMARY ---" does NOT
            appear in your pre-injected context): get_file_content — path: "Financials/projections_summary.md"
   Call 13 (CONDITIONAL — execute only if Call 12 was made): get_file_content — path: "Financials/covenant_compliance.json"
-  After all mandatory calls (and any applicable conditional calls) complete, write the full 13-section memo.
+  After Call 1 and any applicable conditional calls complete, write the full 13-section memo.
   Do not make any exploratory or undirected tool calls beyond the sequence above.
 
   STEP 2 — SAVE SUPPLEMENTARY FILES (optional): If you produce a standalone artifact that should be persisted separately from the main credit memo (e.g., a standalone collateral schedule, a sensitivity analysis table, or an executive summary addendum), call save_to_workspace with the appropriate path and content. Do NOT call save_to_workspace for the main credit memorandum itself — it is saved automatically by the system.
@@ -76,10 +84,10 @@ instructions: |
   Loan amount, loan type, purpose, proposed term, interest rate structure (fixed/variable), amortization, and any proposed covenants or conditions precedent. Populate rate, term, and amortization directly from the "--- LOAN TERMS ---" block and the "--- LOAN REQUEST ---" block pre-injected into your context. Do NOT write "not disclosed" or "TBD" for any field that is present in those blocks.
 
   ## 5. Collateral Analysis
-  Reproduce the full collateral schedule table from Agent Notes/collateral_analysis.md if available, including estimated value, lien position, LTV ratio, and quality rating for each collateral item, followed by the aggregate coverage summary and narrative assessment. If the collateral agent note is the source, state this explicitly. If SLACR is the only source, reproduce the SLACR collateral description and note "per SLACR analysis — formal collateral analysis pending." Flag any cross-collateralization or subordination concerns. Do not write [DATA MISSING] if collateral information exists anywhere in the workspace.
+  Use the pre-injected "--- COLLATERAL ANALYSIS ---" block if present; otherwise use the search_workspace result from Call 10. Reproduce the full collateral schedule table, including estimated value, lien position, LTV ratio, and quality rating for each collateral item, followed by the aggregate coverage summary and narrative assessment. If the collateral agent note is the source, state this explicitly. If SLACR is the only source, reproduce the SLACR collateral description and note "per SLACR analysis — formal collateral analysis pending." Flag any cross-collateralization or subordination concerns. Do not write [DATA MISSING] if collateral information exists anywhere in the workspace.
 
   ## 6. Guarantor Analysis
-  Reproduce the per-guarantor table from Agent Notes/guarantor_analysis.md if available, including: guarantor name and relationship to borrower, estimated net worth (assets − liabilities), liquid assets, contingent liabilities, guarantee coverage ratio (net worth / loan amount), overall guarantee quality rating (Strong / Moderate / Weak), and any adverse background findings (litigation, judgments, bankruptcy, regulatory actions) identified by the guarantor agent's online search. If the agent note is the source, state this explicitly. Note any concentration or guarantee limitations. Do not write [DATA MISSING] if the guarantor note exists in the workspace.
+  Use the pre-injected "--- GUARANTOR ANALYSIS ---" block if present; otherwise use the search_workspace result from Call 11. Reproduce the per-guarantor table, including: guarantor name and relationship to borrower, estimated net worth (assets − liabilities), liquid assets, contingent liabilities, guarantee coverage ratio (net worth / loan amount), overall guarantee quality rating (Strong / Moderate / Weak), and any adverse background findings (litigation, judgments, bankruptcy, regulatory actions) identified by the guarantor agent's online search. If the agent note is the source, state this explicitly. Note any concentration or guarantee limitations. Do not write [DATA MISSING] if the guarantor note exists in the workspace.
 
   ## 7. Financial Analysis
   Three-year trend analysis of revenue, EBITDA, net income. Key ratios: DSCR, leverage (D/E, D/EBITDA), liquidity (current ratio, quick ratio), and profitability (net margin, ROA). Flag anomalies or deteriorating trends.
@@ -97,12 +105,12 @@ instructions: |
   Summary of primary credit risks organized by category (financial, operational, market, collateral, management). For each risk, note severity (Low/Medium/High) and any mitigating factors.
 
   ## 11. SLACR Risk Rating
-  Retrieve SLACR/slacr.json using get_file_content and reproduce the full dimension score table (all five dimensions with weight, score, and rationale). The Rationale column MUST be populated for every dimension — match each dimension name to its rationale sentence from the slacr_analysis.md narrative retrieved via search_workspace. Do not leave any Rationale cell blank or use "–". Then state the composite score and rating band. Use the following labels to describe each dimension score in the narrative: 1 = Strong, 2 = Moderate, 3 = Neutral, 4 = Weak, 5 = Critical. Ensure all risk narrative language in this section and Section 10 uses these exact labels — do not use stronger or weaker language than the score warrants (e.g., if a dimension scores 2, describe it as "moderate," not "weak"). If slacr.json is absent, note "SLACR analysis pending."
+  Use the pre-injected "--- SLACR SCORES ---" block if present; otherwise use the get_file_content result from Call 4. Reproduce the full dimension score table (all five dimensions with weight, score, and rationale). The Rationale column MUST be populated for every dimension — match each dimension name to its rationale sentence from the "--- SLACR ANALYSIS ---" pre-injected block or the search_workspace result from Call 8. Do not leave any Rationale cell blank or use "–". Then state the composite score and rating band. Use the following labels to describe each dimension score in the narrative: 1 = Strong, 2 = Moderate, 3 = Neutral, 4 = Weak, 5 = Critical. Ensure all risk narrative language in this section and Section 10 uses these exact labels — do not use stronger or weaker language than the score warrants (e.g., if a dimension scores 2, describe it as "moderate," not "weak"). If slacr.json is absent, note "SLACR analysis pending."
 
-  If Agent Notes/neural_slacr.md was retrieved in STEP 1, append the following subsection immediately after the composite score paragraph:
+  If the "--- NEURAL SLACR ANALYSIS ---" pre-injected block is present, or if Agent Notes/neural_slacr.md content was returned by search_workspace in Call 9, append the following subsection immediately after the composite score paragraph:
 
   ### Neural SLACR Model Validation
-  Summarize the ML model's predicted rating, confidence level, and the top 2–3 SHAP feature drivers from the retrieved neural_slacr.md narrative. Note whether the ML prediction aligns with or diverges from the analyst-scored composite, and briefly explain the implication (e.g., "The ML model's Moderate Risk prediction aligns with the analyst composite, providing independent quantitative validation" or "The ML model predicts Elevated Risk versus the analyst composite band of Moderate Risk — the SHAP analysis attributes this divergence to a high D/E ratio signal not fully captured in the dimension scores"). Draw directly from the retrieved narrative — do not fabricate figures. If neural_slacr.md content was not returned by search_workspace, omit this subsection entirely.
+  Summarize the ML model's predicted rating, confidence level, and the top 2–3 SHAP feature drivers from the retrieved neural_slacr.md narrative. Note whether the ML prediction aligns with or diverges from the analyst-scored composite, and briefly explain the implication (e.g., "The ML model's Moderate Risk prediction aligns with the analyst composite, providing independent quantitative validation" or "The ML model predicts Elevated Risk versus the analyst composite band of Moderate Risk — the SHAP analysis attributes this divergence to a high D/E ratio signal not fully captured in the dimension scores"). Draw directly from the retrieved narrative — do not fabricate figures. If no neural SLACR content was available from either source, omit this subsection entirely.
 
   ## 12. Loan Structuring Recommendations
   Recommended loan structure, covenants (financial and affirmative), reporting requirements, and any conditions precedent to funding.
