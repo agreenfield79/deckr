@@ -2,7 +2,7 @@
 
 🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
 
-Deckr is a **multi-agent AI workspace** for commercial borrowers preparing for a capital or debt raise.
+Deckr is a **multi-agent AI workspace** for businesses pursuing a commercial loan or credit facility.
 
 Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
 
