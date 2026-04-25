@@ -1,14 +1,12 @@
 # Deckr
 
-🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
-
 Deckr is a **multi-agent AI workspace** for businesses pursuing a commercial loan or credit facility.
 
 Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
 
 A borrower runs the pipeline and gets:
 - A **13-section credit memorandum** written from the lender's perspective
-- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids. 
+- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids.
 
 **Built by Bankers. Powered by Watson.**
 
@@ -18,7 +16,11 @@ A borrower runs the pipeline and gets:
 
 ![Deckr UI — Deckr tab showing optimized term sheet output](docs/demo.png)
 
+🌐 **Live demo: [deckr-ai.com](https://deckr-ai.com)**
+
 🎬 **Full walkthrough: [YouTube Demo](https://www.youtube.com/watch?v=50bChirvvTo)**
+
+📋 **Demo tester? [Usability Survey](https://docs.google.com/forms/d/e/1FAIpQLScIN5kWuCxVUXTBAOSukRI3YU9e78zcdfeyl5udJQUCh0VkQA/viewform?usp=publish-editor)**
 
 ---
 
