@@ -30,7 +30,7 @@ if not os.getenv("IBMCLOUD_API_KEY"):
     sys.exit(1)
 
 from routers import agent, workspace, forms, upload, deck, deckr, status, risk, tools, interpret
-from routers import financials, graph, projections, schema, slacr, mongo
+from routers import financials, graph, projections, schema, slacr, mongo, admin
 
 # --- Credential keys — presence only, never values ---
 _CREDENTIAL_KEYS = {"IBMCLOUD_API_KEY", "WATSONX_PROJECT_ID", "WATSONX_URL", "WATSONX_API_VERSION"}
@@ -111,7 +111,42 @@ async def lifespan(app: FastAPI):
         from services.orchestrate_client import configured_agent_ids
         for agent_name, is_set in configured_agent_ids().items():
             logger.info("  %-28s %s", f"  agent:{agent_name}", "✓ configured" if is_set else "✗ missing")
-    logger.info("Deckr API ready — http://localhost:8000/api/health")
+        # ── Orchestrate tool server — Track A (ngrok) vs Track B (Cloud Run) ──
+        try:
+            import yaml as _yaml
+            from pathlib import Path as _Path
+            _spec = _yaml.safe_load(
+                (_Path(__file__).parent / "tools_openapi.yaml").read_text()
+            )
+            _tool_url = ((_spec or {}).get("servers") or [{}])[0].get("url", "(not set)")
+            if "ngrok" in _tool_url:
+                _track = "Track A — local/ngrok"
+                logger.warning(
+                    "  %-28s %s  [%s]",
+                    "ORCHESTRATE_TOOL_SERVER", _tool_url, _track,
+                )
+                logger.warning(
+                    "  Tool calls from Orchestrate agents will POST to %s/api/tools/... "
+                    "— ngrok must be running and tunneling :8000",
+                    _tool_url,
+                )
+            elif "run.app" in _tool_url:
+                _track = "Track B — Cloud Run"
+                logger.info(
+                    "  %-28s %s  [%s]",
+                    "ORCHESTRATE_TOOL_SERVER", _tool_url, _track,
+                )
+                logger.info(
+                    "  Tool calls from Orchestrate agents will POST to Cloud Run. "
+                    "Local filesystem writes will NOT be reached from agent tool calls.",
+                )
+            else:
+                logger.warning(
+                    "  %-28s %s  [Track ? — unrecognised server]",
+                    "ORCHESTRATE_TOOL_SERVER", _tool_url,
+                )
+        except Exception as _tse:
+            logger.warning("  ORCHESTRATE_TOOL_SERVER  could not read tools_openapi.yaml — %s", _tse)
     # Log COS config when active
     use_cos = os.getenv("USE_COS", "false").lower() == "true"
     if use_cos:
@@ -164,6 +199,7 @@ app.include_router(projections.router, prefix="/api/projections", tags=["project
 app.include_router(schema.router,      prefix="/api/schema",      tags=["schema"])
 app.include_router(slacr.router,       prefix="/api/slacr",       tags=["slacr"])
 app.include_router(mongo.router,       prefix="/api/mongo",       tags=["mongo"])
+app.include_router(admin.router,       prefix="/api/admin",       tags=["admin"])
 
 
 @app.get("/api/health", tags=["health"])

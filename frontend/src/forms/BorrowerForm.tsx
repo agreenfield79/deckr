@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Trash2, Upload, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, Upload, RotateCcw, Database } from 'lucide-react'
 import FormField from './FormField'
 import { getBorrower, saveBorrower } from '../api/forms'
+import { resetPipelineData } from '../api/admin'
 import { useProject } from '../context/ProjectContext'
 import { useToast } from '../context/ToastContext'
 import { emptyBorrower } from '../types/forms'
@@ -50,6 +51,8 @@ export default function BorrowerForm() {
   const [form, setForm] = useState<BorrowerProfile>(emptyBorrower())
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const { refreshTree } = useProject()
   const toast = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -85,6 +88,21 @@ export default function BorrowerForm() {
   const handleClear = () => {
     setForm(emptyBorrower())
     toast.success('Form cleared')
+  }
+
+  const handleResetConfirm = async () => {
+    setConfirmReset(false)
+    setResetting(true)
+    try {
+      await resetPipelineData()
+      setForm(emptyBorrower())
+      await refreshTree()
+      toast.info('Pipeline data cleared.')
+    } catch {
+      toast.error('Reset failed — check that the backend is running and RESET_ENABLED is set.')
+    } finally {
+      setResetting(false)
+    }
   }
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,6 +314,36 @@ export default function BorrowerForm() {
           <RotateCcw size={14} />
           Clear
         </button>
+
+        {!confirmReset ? (
+          <button
+            type="button"
+            onClick={() => setConfirmReset(true)}
+            disabled={resetting}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#da1e28] text-white text-sm font-medium rounded hover:bg-[#b01c24] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Database size={14} />
+            {resetting ? 'Resetting…' : 'Reset Pipeline Data'}
+          </button>
+        ) : (
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-[#da1e28] font-medium">Wipe all DB records and vector indexes?</span>
+            <button
+              type="button"
+              onClick={handleResetConfirm}
+              className="px-3 py-1.5 bg-[#da1e28] text-white text-xs font-medium rounded hover:bg-[#b01c24] transition-colors"
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmReset(false)}
+              className="px-3 py-1.5 text-xs text-[#525252] hover:underline"
+            >
+              Cancel
+            </button>
+          </span>
+        )}
       </div>
     </form>
   )

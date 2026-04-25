@@ -233,6 +233,29 @@ def run(
                         "session_id": session_id,
                     })
 
+            # Task 2.1 (Phase 1, Step 2): if the financial agent did not write the
+            # JSON sidecar via its tool, write a valid empty-object stub so that
+            # _ip3_covenants_from_risk has a parseable file.  The IP2 SQL fallback
+            # (Task 1.6) will have already written a richer version if available;
+            # this covers the edge case where the Orchestrate path saved only the
+            # markdown but not the JSON (e.g. tool call succeeded for md but failed
+            # for json, or Track B wrote json to Cloud Run while local is empty).
+            # IMPORTANT: stub must be a valid JSON object — never the bare literal
+            # `null`, which causes json.loads to return None and raises AttributeError.
+            if agent_name == "financial":
+                _json_sidecar = "Agent Notes/financial_ratios.json"
+                _json_missing = False
+                try:
+                    workspace_service.read_file(_json_sidecar)
+                except Exception:
+                    _json_missing = True
+                if _json_missing:
+                    logger.warning(
+                        "agent_service: financial_ratios.json missing after tool save — "
+                        "writing null stub for IP3 covenants path"
+                    )
+                    workspace_service.write_file(_json_sidecar, "{}")
+
         _elapsed = int((time.time() - _run_start) * 1000)
         event_bus.publish({"type": "agent_done", "agent_name": agent_name, "elapsed_ms": _elapsed, "session_id": session_id})
         return {"reply": reply, "saved_to": effective_path if (save_to_workspace and not tool_handles_save) else None}
@@ -1137,29 +1160,22 @@ def _fire_ip2_hook(agent_name: str, pipeline_state: dict) -> None:
 def _ip2_financial(pipeline_state: dict) -> None:
     """
     D-4: read Agent Notes/financial_ratios.json sidecar written by the financial agent.
-    Skip gracefully if absent — hook becomes fully active once D-4 is deployed.
-    Expected sidecar shape: { "<fiscal_year>": { "dscr": ..., "leverage": ..., ... }, ... }
 
-    SQL fallback: for any ratio the agent left as null, compute it directly from
-    income_statements / balance_sheets rows that were already written at IP1.
-    This guarantees ebitda_margin, net_profit_margin, interest_coverage, current_ratio,
-    debt_to_equity, and return_on_assets are populated whenever source data is available.
+    SQL fallback (Phase 1): when JSON is absent or invalid, compute ratios directly
+    from income_statements / balance_sheets seeded at IP1.  Guarantees IP2 gate always
+    passes when source data is available, regardless of agent tool-call success or
+    deployment track (A/B).  After writing SQL rows, also writes financial_ratios.json
+    so that IP3's DSCR read for OCC band tightening succeeds (Task 1.6).
     """
-    try:
-        raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
-        ratios: dict = json.loads(raw)
-    except Exception:
-        logger.debug(
-            "IP2[financial]: Agent Notes/financial_ratios.json absent — "
-            "D-4 sidecar not yet written by financial agent; skipping SQL write"
-        )
-        return
+    entity_id      = pipeline_state.get("entity_id") or ""
+    pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
+    deal_id        = pipeline_state.get("deal_id") or ""
 
     # ------------------------------------------------------------------
-    # SQL-backed fallback: load income statement + balance sheet rows
-    # already persisted at IP1 so we can fill null ratio slots.
+    # Load SQL baseline rows — used by both the JSON path (null-slot patch)
+    # and the SQL-only path (synthetic ratios).  Load first so they are
+    # always available regardless of which branch is taken below.
     # ------------------------------------------------------------------
-    entity_id = pipeline_state.get("entity_id") or ""
     _inc_by_year: dict[int, Any] = {}
     _bs_by_year: dict[int, Any] = {}
     try:
@@ -1177,11 +1193,58 @@ def _ip2_financial(pipeline_state: dict) -> None:
                 if _r.as_of_date:
                     _bs_by_year[_r.as_of_date.year] = _r
     except Exception as _sq_err:
-        logger.debug("IP2[financial]: SQL fallback query failed — %s", _sq_err)
-    # ------------------------------------------------------------------
+        logger.debug("IP2[financial]: SQL baseline query failed — %s", _sq_err)
 
+    # ------------------------------------------------------------------
+    # Try agent sidecar; fall back to SQL-only mode on any failure.
+    # ------------------------------------------------------------------
+    json_present = False
+    ratios: dict = {}
+    try:
+        raw = workspace_service.read_file("Agent Notes/financial_ratios.json")
+        _parsed = json.loads(raw)
+        if not isinstance(_parsed, dict):
+            raise ValueError("financial_ratios.json did not parse to a dict")
+        ratios = _parsed
+        json_present = True
+    except Exception:
+        logger.warning(
+            "IP2[financial]: Agent Notes/financial_ratios.json absent or invalid — "
+            "computing ratios from SQL baseline (entity_id=%s)",
+            entity_id,
+        )
+
+    # SQL-only mode: build synthetic ratios dict from income-statement fiscal years.
+    if not json_present:
+        if not _inc_by_year:
+            logger.warning(
+                "IP2[financial]: JSON absent and no income_statement rows found "
+                "for entity_id=%s — cannot compute ratios; IP2 gate will fail",
+                entity_id,
+            )
+            return
+
+        # DSCR = ebit (most recent FY) / proposed_annual_debt_service
+        _dscr: float | None = None
+        try:
+            from services import sql_service as _ss_dscr
+            _lt  = _ss_dscr.get_loan_terms(deal_id)
+            _ads = float((_lt or {}).get("proposed_annual_debt_service") or 0)
+            _most_recent_inc = _inc_by_year.get(max(_inc_by_year.keys()))
+            if _ads > 0 and _most_recent_inc and _most_recent_inc.ebit is not None:
+                _dscr = round(float(_most_recent_inc.ebit) / _ads, 4)
+        except Exception as _dscr_err:
+            logger.debug("IP2[financial]: DSCR SQL computation failed — %s", _dscr_err)
+
+        # One synthetic entry per fiscal year; DSCR only on the most recent year
+        _most_recent_year = max(_inc_by_year.keys())
+        for _yr in sorted(_inc_by_year.keys()):
+            ratios[str(_yr)] = {"dscr": _dscr if _yr == _most_recent_year else None}
+
+    # ------------------------------------------------------------------
+    # Per-year loop: patch null slots from SQL rows, then write to SQL.
+    # ------------------------------------------------------------------
     from services import sql_service
-    pipeline_run_id = pipeline_state.get("pipeline_run_id") or ""
     wrote = 0
     for year_str, year_data in ratios.items():
         year = _safe_int_local(year_str.replace("FY", "").replace("fy", "")) or _safe_int_local(year_str)
@@ -1228,9 +1291,41 @@ def _ip2_financial(pipeline_state: dict) -> None:
         ok = sql_service.write_financial_ratios(entity_id, pipeline_run_id, year, year_data)
         if ok:
             wrote += 1
-    logger.info(
-        "IP2[financial]: wrote %d financial_ratio row(s) entity_id=%s", wrote, entity_id
-    )
+
+    if json_present:
+        logger.info(
+            "IP2[financial]: wrote %d financial_ratio row(s) entity_id=%s", wrote, entity_id
+        )
+    else:
+        logger.warning(
+            "IP2[financial]: JSON absent — wrote %d ratio row(s) from SQL fallback entity_id=%s",
+            wrote, entity_id,
+        )
+
+    # Task 1.6: write financial_ratios.json from SQL-computed data so that
+    # _fire_ip3_hook's DSCR read (line 1548) succeeds and OCC band tightening
+    # receives the correct DSCR value.  Skip if agent already wrote the file
+    # or if no rows were successfully written.
+    if not json_present and wrote > 0:
+        try:
+            _json_out = {
+                ys: {rk: rv for rk, rv in yd.items() if rv is not None}
+                for ys, yd in ratios.items()
+                if isinstance(yd, dict)
+            }
+            workspace_service.write_file(
+                "Agent Notes/financial_ratios.json",
+                json.dumps(_json_out, indent=2),
+            )
+            logger.info(
+                "IP2[financial]: wrote Agent Notes/financial_ratios.json from SQL fallback "
+                "(%d year(s)) for IP3 DSCR read",
+                len(_json_out),
+            )
+        except Exception as _jw_err:
+            logger.warning(
+                "IP2[financial]: failed to write JSON sidecar from SQL — %s", _jw_err
+            )
 
 
 def _ip2_industry(pipeline_state: dict) -> None:
