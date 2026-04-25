@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
+import queue as _stdlib_queue
 import re
+import threading as _threading
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
@@ -65,17 +67,39 @@ def get_registry():
 @limiter.limit("2/minute")
 def run_pipeline(request: Request, body: PipelineRequest) -> StreamingResponse:
     """
-    Run the full analysis pipeline: Financial → Risk → Packaging → Review.
+    Run the full analysis pipeline: Financial → Risk → Packaging → Review → Deckr.
     Returns an NDJSON stream of progress events so the frontend can update
-    progressively without waiting for all four agents to complete.
-    Rate-limited: 2 requests/minute per IP (4-agent sequential chain).
+    progressively without waiting for all agents to complete.
+    Rate-limited: 2 requests/minute per IP.
+
+    The pipeline generator runs in an isolated daemon thread so that a browser
+    disconnect does not abandon the generator mid-execution (which would prevent
+    later agents — specifically Deckr — from running).
     """
     logger.info("POST /agent/pipeline session=%s", body.session_id)
     safe_message = sanitize_message(body.message or "", source="pipeline")
-    return StreamingResponse(
-        agent_service.run_pipeline_stream(body.session_id, safe_message),
-        media_type="application/x-ndjson",
-    )
+
+    q: _stdlib_queue.Queue = _stdlib_queue.Queue()
+
+    def _run() -> None:
+        try:
+            for event in agent_service.run_pipeline_stream(body.session_id, safe_message):
+                q.put(event)
+        finally:
+            q.put(None)  # sentinel — signals _stream() to stop
+
+    _threading.Thread(
+        target=_run, daemon=True, name=f"pipeline-{body.session_id[:8]}"
+    ).start()
+
+    def _stream():
+        while True:
+            event = q.get()  # no timeout — sentinel always arrives via finally
+            if event is None:
+                break
+            yield event
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
 @router.get("/events")
