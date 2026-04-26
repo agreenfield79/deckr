@@ -6,6 +6,7 @@ import MarkdownViewer from '../editor/MarkdownViewer'
 import type { TabId } from './TabBar'
 import { useConfig } from '../context/ConfigContext'
 import { getPipelineHistory, type PipelineRun } from '../api/pipelineRuns'
+import { getFile } from '../api/workspace'
 import PipelineGantt from '../components/PipelineGantt'
 
 function parseSections(markdown: string): Record<string, string> {
@@ -261,6 +262,12 @@ export default function StatusTab({ onNavigate }: StatusTabProps) {
       {/* System Health */}
       <SystemHealthPanel health={health} loading={healthLoading} onRefresh={refreshHealth} />
 
+      {/* Governance — Regulatory Knowledge Base */}
+      <RegulatoryKBPanel />
+
+      {/* Governance — Workspace Files */}
+      <WorkspaceFilesPanel />
+
       {/* Pipeline Run History */}
       <PipelineHistoryPanel />
 
@@ -383,6 +390,181 @@ function SystemHealthPanel({ health, loading, onRefresh }: SystemHealthPanelProp
 
           {!health && !loading && (
             <p className="text-[#6f6f6f] italic">Backend unavailable — health data not loaded.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// RegulatoryKBPanel — persistent regulatory knowledge base status
+// ---------------------------------------------------------------------------
+
+const REGULATORY_DOCS = [
+  { label: 'ECOA Reg B',         citation: '12 CFR Part 1002', version: 'Check eCFR for latest',    source: 'eCFR API' },
+  { label: 'Fair Housing Act',   citation: '24 CFR Part 100',  version: 'Check eCFR for latest',    source: 'eCFR API' },
+  { label: 'SBA Loan Programs',  citation: '13 CFR Part 120',  version: 'Check eCFR for latest',    source: 'eCFR API' },
+  { label: 'OCC/FFIEC Guidance', citation: 'v2024-Q4',         version: 'Pinned static PDF',         source: 'Manual' },
+]
+
+function RegulatoryKBPanel() {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="mt-4 border border-[#e0e0e0] rounded bg-white overflow-hidden">
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
+      >
+        <span className="flex items-center gap-2">
+          <Database size={13} className="text-[#525252]" />
+          Regulatory Knowledge Base
+          <span className="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#f6f2ff] text-[#6929c4]">
+            policy_regulatory_kb
+          </span>
+        </span>
+        <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-2 border-t border-[#e0e0e0]">
+          <p className="text-[10px] text-[#6f6f6f] pt-3 italic">
+            Persistent regulatory sources loaded into the Policy Agent knowledge base.
+            Import via: <span className="font-mono">orchestrate knowledge-bases import -f knowledge_bases/policy_kb.yaml</span>
+          </p>
+          <div className="space-y-1">
+            {REGULATORY_DOCS.map((doc) => (
+              <div key={doc.label} className="flex items-center justify-between px-2.5 py-1.5 bg-[#f4f4f4] rounded">
+                <div>
+                  <span className="text-[11px] font-medium text-[#161616]">{doc.label}</span>
+                  <span className="ml-2 text-[10px] text-[#8d8d8d]">{doc.citation}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-[#8d8d8d] italic">{doc.source}</span>
+                  <span className="text-[10px] text-[#525252] bg-[#e0e0e0] px-1.5 py-0.5 rounded font-mono">
+                    {doc.version}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WorkspaceFilesPanel — deal-level pipeline output file presence
+// ---------------------------------------------------------------------------
+
+const WORKSPACE_FILES = [
+  { path: 'Deck/memo.md',                        label: 'memo.md',                agent: 'Packaging Agent' },
+  { path: 'Agent Notes/review_notes.md',         label: 'review_notes.md',        agent: 'Review Agent' },
+  { path: 'Agent Notes/governance_clearance.md', label: 'governance_clearance.md', agent: 'Policy Agent' },
+  { path: 'Agent Notes/neural_slacr.md',         label: 'neural_slacr.md',        agent: 'Interpreter Agent' },
+  { path: 'SLACR/slacr.json',                    label: 'slacr.json',             agent: 'Risk Agent' },
+]
+
+function WorkspaceFilesPanel() {
+  const [expanded, setExpanded] = useState(false)
+  const [fileStatus, setFileStatus] = useState<Record<string, boolean | null>>({})
+  const [loading, setLoading] = useState(false)
+
+  const checkFiles = async () => {
+    setLoading(true)
+    const results: Record<string, boolean | null> = {}
+    await Promise.all(
+      WORKSPACE_FILES.map(async ({ path }) => {
+        try {
+          const res = await getFile(path)
+          results[path] = !!(res as { content?: string }).content
+        } catch {
+          results[path] = false
+        }
+      })
+    )
+    setFileStatus(results)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (expanded) checkFiles()
+  }, [expanded])
+
+  const presentCount = Object.values(fileStatus).filter(Boolean).length
+
+  return (
+    <div className="mt-4 border border-[#e0e0e0] rounded bg-white overflow-hidden">
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[#161616] hover:bg-[#f4f4f4] transition-colors cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
+      >
+        <span className="flex items-center gap-2">
+          <Cpu size={13} className="text-[#525252]" />
+          Workspace Files
+          {Object.keys(fileStatus).length > 0 && (
+            <span className={`ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
+              presentCount === WORKSPACE_FILES.length
+                ? 'bg-[#defbe6] text-[#198038]'
+                : presentCount > 0
+                ? 'bg-[#fdf6dd] text-[#b28600]'
+                : 'bg-[#e8e8e8] text-[#6f6f6f]'
+            }`}>
+              {presentCount}/{WORKSPACE_FILES.length} present
+            </span>
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          {expanded && (
+            <button
+              onClick={(e) => { e.stopPropagation(); checkFiles() }}
+              disabled={loading}
+              title="Refresh file status"
+              className="p-1 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] rounded transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            </button>
+          )}
+          <span className="text-[#8d8d8d]">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-[#e0e0e0]">
+          {loading && (
+            <div className="px-4 py-3 text-xs text-[#6f6f6f] italic">Checking files…</div>
+          )}
+          {!loading && (
+            <div className="px-4 py-3 space-y-1">
+              {WORKSPACE_FILES.map(({ path, label, agent }) => {
+                const present = fileStatus[path]
+                return (
+                  <div key={path} className="flex items-center justify-between px-2.5 py-1.5 bg-[#f4f4f4] rounded">
+                    <div>
+                      <span className="font-mono text-[11px] text-[#161616]">{label}</span>
+                      <span className="ml-2 text-[10px] text-[#8d8d8d]">{agent}</span>
+                    </div>
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      present === null
+                        ? 'bg-[#e8e8e8] text-[#6f6f6f]'
+                        : present
+                        ? 'bg-[#defbe6] text-[#198038]'
+                        : 'bg-[#e8e8e8] text-[#6f6f6f]'
+                    }`}>
+                      {present === null ? '—' : present ? 'Present' : 'Absent'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}

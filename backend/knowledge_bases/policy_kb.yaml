@@ -1,0 +1,14 @@
+spec_version: v1
+kind: knowledge_base
+name: policy_regulatory_kb
+description: |
+  Fair lending regulations and commercial loan underwriting guidance for
+  governance and compliance review by the Policy Agent.
+  Covers ECOA Reg B, Fair Housing Act, SBA Loan Programs, and OCC/FFIEC guidance.
+documents:
+  - path: ecoa_reg_b.txt
+  - path: fair_housing_act.txt
+  - path: sba_loan_programs.txt
+  - path: occ_ffiec_guidance.pdf
+vector_index:
+  embeddings_model_name: ibm/slate-125m-english-rtrvr-v2

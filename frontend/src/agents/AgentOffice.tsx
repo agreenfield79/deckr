@@ -23,6 +23,11 @@ const DECKR_CARD: AgentCard = {
   key: 'deckr', label: 'Deckr', abbr: 'Dk', activeColor: 'ring-[#ff832b] bg-[#fff2e8]',
 }
 
+// Governance card — rendered full-width between the analytical grid and Deckr output
+const POLICY_CARD: AgentCard = {
+  key: 'policy', label: 'Policy', abbr: 'Po', activeColor: 'ring-[#6929c4] bg-[#f6f2ff]',
+}
+
 // Analytical pipeline cards — rendered in a 4-column grid (Phase 28: 8 cards).
 // Row 1 (parallel analysis stage): Financial | Industry | Collateral | Guarantor
 // Row 2 (sequential post-analysis): Risk | Interpreter | Packaging | Review
@@ -234,6 +239,19 @@ export default function AgentOffice({ agentActivity, pipelineSteps, isPipelineRu
           </div>
 
           {/* Output — Deckr Agent, full-width below the analytical grid */}
+          <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mt-2 mb-1 px-0.5">
+            Governance
+          </p>
+          <div className="mb-2">
+            <AgentStatusCard
+              card={POLICY_CARD}
+              status={agentActivity[POLICY_CARD.key]?.status ?? 'idle'}
+              pipelineStatus={pipelineByAgent.current[POLICY_CARD.key]?.status}
+              since={agentActivity[POLICY_CARD.key]?.since}
+            />
+          </div>
+
+          {/* Output — Deckr Agent, full-width below the governance card */}
           <p className="text-[8px] font-semibold text-[#8d8d8d] uppercase tracking-wider mt-2 mb-1 px-0.5">
             Output
           </p>

@@ -24,8 +24,9 @@ _AGENT_ID_MAP: dict[str, str | None] = {
     "packaging":  os.getenv("ORCHESTRATE_AGENT_ID_PACKAGING"),
     "financial":  os.getenv("ORCHESTRATE_AGENT_ID_FINANCIAL"),
     "risk":       os.getenv("ORCHESTRATE_AGENT_ID_RISK"),
-    "review":     os.getenv("ORCHESTRATE_AGENT_ID_REVIEW"),
-    "deckr":        os.getenv("ORCHESTRATE_AGENT_ID_DECKR"),
+    "review":      os.getenv("ORCHESTRATE_AGENT_ID_REVIEW"),
+    "policy":      os.getenv("ORCHESTRATE_AGENT_ID_POLICY"),
+    "deckr":       os.getenv("ORCHESTRATE_AGENT_ID_DECKR"),
     "interpreter":  os.getenv("ORCHESTRATE_AGENT_ID_INTERPRETER"),
 }
 

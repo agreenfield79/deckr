@@ -4,7 +4,7 @@ import { useSession } from '../hooks/useSession'
 import type { AgentInfo, AgentMessage, AgentName, AgentResponse, PipelineEvent, PipelineStepState } from '../types/agent'
 
 // Pipeline sequence mirrors PIPELINE_SEQUENCE in agent_service.py
-const PIPELINE_AGENTS = ['extraction', 'financial', 'industry', 'collateral', 'guarantor', 'risk', 'interpreter', 'packaging', 'review', 'deckr']
+const PIPELINE_AGENTS = ['extraction', 'financial', 'industry', 'collateral', 'guarantor', 'risk', 'interpreter', 'packaging', 'review', 'policy', 'deckr']
 const PIPELINE_DISPLAY: Record<string, string> = {
   extraction:  'Financial Data Extraction Agent',
   financial:   'Financial Analysis Agent',
@@ -15,6 +15,7 @@ const PIPELINE_DISPLAY: Record<string, string> = {
   interpreter: 'Interpreter Agent',
   packaging:   'Packaging Agent',
   review:      'Review Agent',
+  policy:      'Policy Agent',
   deckr:       'Deckr Agent',
 }
 

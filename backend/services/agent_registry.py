@@ -144,6 +144,22 @@ AGENTS: dict[str, dict] = {
         # overwriting the full review the tool just wrote.
         "orchestrate_tool_save": True,
     },
+    "policy": {
+        "display_name":    "Policy Agent",
+        "system_prompt":   "prompts/policy_agent.txt",
+        # memo.md and review_notes.md are pre-injected by _inject_policy_context()
+        # in agent_service.run().  The agent's only remaining tool calls are
+        # get_file_content("SLACR/slacr.json") and save_to_workspace.
+        "context_folders": [],
+        "output_path":     "Agent Notes/governance_clearance.md",
+        "model":           "llama-70b",
+        "mode":            "generate",
+        "conversational":  False,
+        # Agent calls save_to_workspace explicitly (STEP 3).
+        # Flag suppresses backend auto-save so the brief confirmation reply
+        # does not overwrite the full governance note the tool wrote.
+        "orchestrate_tool_save": True,
+    },
     "deckr": {
         "display_name":    "Deckr Agent",
         "system_prompt":   "prompts/deckr_agent.txt",

@@ -47,7 +47,8 @@ PIPELINE_STAGES: list[list[str]] = [
     ["interpreter"],  # ML inference pre-hook runs first, then agent enriches narrative
     ["packaging"],
     ["review"],
-    ["deckr"],    # Stage 7 — borrower-facing advocacy deal sheet
+    ["policy"],   # Stage 7 — regulatory governance review (ECOA/FHA compliance, SLACR adverse factors)
+    ["deckr"],    # Stage 8 — borrower-facing advocacy deal sheet
 ]
 
 # Flat sequence derived from stages — used for _PIPELINE_PROMPTS lookup and display
@@ -164,6 +165,19 @@ def run(
                 logger.info(
                     "agent_service: interpreter context pre-injected (%d chars) for agent=%s",
                     len(interp_ctx), agent_name,
+                )
+        # Policy agent: pre-inject memo.md and review_notes.md so the agent
+        # can screen for prohibited factors without burning tool-call budget
+        # on get_file_content for large files.  Its only required tool call
+        # after pre-injection is get_file_content("SLACR/slacr.json") for scores,
+        # followed by save_to_workspace("Agent Notes/governance_clearance.md").
+        elif agent_name == "policy":
+            policy_ctx = _inject_policy_context()
+            if policy_ctx:
+                parts.append(policy_ctx)
+                logger.info(
+                    "agent_service: policy context pre-injected (%d chars) for agent=%s",
+                    len(policy_ctx), agent_name,
                 )
         parts.append(f"--- CURRENT REQUEST ---\n{message}")
         full_message = "\n\n".join(parts)
@@ -1035,6 +1049,36 @@ def _inject_packaging_context() -> str:
         except Exception as exc:
             logger.debug(
                 "_inject_packaging_context: could not load %s — %s", path, exc
+            )
+    return "\n\n".join(blocks)
+
+
+def _inject_policy_context() -> str:
+    """
+    Pre-load source files for the policy agent.
+
+    Pre-injecting memo.md and review_notes.md eliminates get_file_content
+    dependency for the two largest files.  The agent's only remaining tool
+    calls are get_file_content("SLACR/slacr.json") for dimension scores and
+    save_to_workspace("Agent Notes/governance_clearance.md").
+
+    Returns an empty string when files do not yet exist (safe no-op).
+    """
+    blocks: list[str] = []
+    for path, label in [
+        ("Deck/memo.md",                       "CREDIT MEMORANDUM"),
+        ("Agent Notes/review_notes.md",        "REVIEW NOTES"),
+    ]:
+        try:
+            content = workspace_service.read_file(path)
+            if content and content.strip():
+                blocks.append(f"--- {label} ---\n{content.strip()}")
+                logger.info(
+                    "_inject_policy_context: loaded %s (%d chars)", path, len(content)
+                )
+        except Exception as exc:
+            logger.warning(
+                "_inject_policy_context: could not load %s — %s", path, exc
             )
     return "\n\n".join(blocks)
 
@@ -1963,6 +2007,27 @@ _PIPELINE_PROMPTS: dict[str, str] = {
         "complete structured review as content. Do not skip this step even if some source files "
         "were missing. Chat reply must be a 1-2 sentence overall assessment only."
     ),
+    # Policy agent: governance and fair-lending compliance review.
+    # memo.md and review_notes.md are pre-injected by _inject_policy_context()
+    # so the agent's only tool calls are get_file_content(slacr.json) + save_to_workspace.
+    "policy": (
+        "Run Policy Agent — regulatory governance review. "
+        "The Credit Memorandum and Review Notes are already pre-loaded in your context "
+        "under '--- CREDIT MEMORANDUM ---' and '--- REVIEW NOTES ---'. "
+        "DO NOT call get_file_content for memo.md or review_notes.md — they are already in your context. "
+        "STEP 1: Call get_file_content with path='SLACR/slacr.json' to retrieve the nine SLACR "
+        "dimension scores. Identify the three dimensions with the lowest scores. "
+        "If the file is not found, note 'SLACR scores unavailable' and continue. "
+        "STEP 2: Screen the pre-loaded memo and review notes for any references to prohibited "
+        "factors under ECOA (12 CFR Part 1002) and FHA (24 CFR Part 100): race, color, religion, "
+        "national origin, sex, marital status, age, familial status, disability, or receipt of "
+        "public assistance. For each prohibited factor found, cite the section and verbatim excerpt. "
+        "If none are found, state 'No prohibited factors detected.' "
+        "STEP 3: You MUST call save_to_workspace — this step is mandatory. "
+        "Call save_to_workspace with path='Agent Notes/governance_clearance.md' and your complete "
+        "governance clearance note as content. Follow the OUTPUT FORMAT in your instructions. "
+        "Chat reply must be a 1-2 sentence summary only (CLEARED or FLAG status + top-3 adverse factors)."
+    ),
     "deckr": (
         "Run Deckr Agent. "
         "The Credit Memorandum and financial analysis are already pre-loaded in your context "
@@ -2155,7 +2220,7 @@ def run_pipeline_stream(session_id: str, message: str = ""):
                 # listing every file to read.  All files are already saved to the
                 # workspace by the time review runs, so tool calls are sufficient.
                 agent_thread_id = f"{pipeline_thread_id}-review"
-            elif agent_name in ("packaging", "risk", "deckr", "interpreter"):
+            elif agent_name in ("packaging", "risk", "deckr", "interpreter", "policy"):
                 # packaging: assembles the deck from workspace files; does not
                 #   need thread history from the analysis chain.
                 # risk: reads all four analysis agent outputs from workspace via
