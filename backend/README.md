@@ -19,10 +19,11 @@ backend/
 │                      # security, limiter, token_cache, form_serializers
 ├── models/            # sql_models, agent, borrower, loan, slacr,
 │                      # neural_slacr_output, graph_models, tool
-├── agents/            # <agent>.agent.yaml — Orchestrate ADK definitions (10 agents)
+├── agents/            # <agent>.agent.yaml — Orchestrate ADK definitions (11 agents)
 │                      # extraction, financial, industry, collateral, guarantor,
-│                      # risk, interpreter, packaging, review, deckr
+│                      # risk, interpreter, packaging, review, policy, deckr
 ├── prompts/           # <agent>_agent.txt — system prompts
+├── knowledge_bases/   # policy_regulatory_kb — ECOA, FHA, SBA, OCC/FFIEC (policy_agent)
 ├── migrations/        # Alembic migrations 001–011
 │                      # 001: initial schema
 │                      # 002: column corrections + ENUM bootstrap
@@ -50,10 +51,10 @@ Controlled by `STORAGE_BACKEND=local|cloud` in `.env`.
 ## Pipeline Stages
 
 ```
-Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk → Interpreter → Packaging → Review → Deckr
+Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk → Interpreter → Packaging → Review → Policy → Deckr
 ```
 
-All 10 agents run through IBM watsonx Orchestrate (GPT-OSS 120B). Agent configs in `agents/`, system prompts in `prompts/`.
+All 11 agents run through IBM watsonx Orchestrate (GPT-OSS 120B). Agent configs in `agents/`, system prompts in `prompts/`. The Policy Agent uses a vector-indexed regulatory knowledge base (`knowledge_bases/`) for fair-lending governance review.
 
 ## Local Setup
 
@@ -113,6 +114,7 @@ ORCHESTRATE_AGENT_ID_RISK=
 ORCHESTRATE_AGENT_ID_INTERPRETER=
 ORCHESTRATE_AGENT_ID_PACKAGING=
 ORCHESTRATE_AGENT_ID_REVIEW=
+ORCHESTRATE_AGENT_ID_POLICY=
 ORCHESTRATE_AGENT_ID_DECKR=
 
 # Databases

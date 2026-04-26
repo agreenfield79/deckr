@@ -27,7 +27,7 @@ A borrower runs the pipeline and gets:
 ## Agent Pipeline
 
 ```
-Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk → Interpreter → Packaging → Review → Deckr
+Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk → Interpreter → Packaging → Review → Policy → Deckr
 ```
 
 | Agent | Output |
@@ -39,8 +39,9 @@ Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk �
 | Guarantor | `Agent Notes/guarantor_analysis.md` |
 | SLACR Risk | `SLACR/slacr_analysis.md`, `slacr.json` |
 | Interpreter | `Agent Notes/neural_slacr.md` |
-| Packaging | `Deck/deck.md` (13-section credit memo) |
+| Packaging | `Deck/memo.md` (13-section credit memo) |
 | Review | `Agent Notes/review_notes.md` |
+| Policy | `Agent Notes/governance_clearance.md` (fair-lending governance review) |
 | Deckr | `Deck/deckr.md` (optimized term sheet) |
 
 All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock).
@@ -56,11 +57,12 @@ All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock
 | Frontend | React 19 · TypeScript · Vite · Tailwind CSS v4 · `@carbon/charts-react` · Cytoscape.js |
 | Backend | Python 3.10.11+ · FastAPI · SQLAlchemy · Alembic · chromadb · tenacity |
 | AI | IBM watsonx.ai — GPT-OSS-120B · `ibm/slate-125m-english-rtrvr-v2` (embeddings) |
-| Orchestration | IBM watsonx Orchestrate via ADK — 10 agents, 14 tool handlers |
+| Orchestration | IBM watsonx Orchestrate via ADK — 11 agents, 14 tool handlers |
 | SQL | SQLite (local) → Cloud SQL PostgreSQL 15 + pgvector (cloud) — 30 tables, 7 views |
 | Document Store | MongoDB Docker (local) → MongoDB Atlas (cloud) — 14 collections |
 | Graph | Neo4j Docker / NetworkX fallback (local) → AuraDB (cloud) — Layers 5A/5B active |
 | Vectors | ChromaDB (local) → pgvector (cloud) — document chunk RAG |
+| Knowledge Base | IBM watsonx Orchestrate KB — `policy_regulatory_kb` (ECOA, FHA, SBA, OCC/FFIEC) |
 | Storage | IBM Cloud Object Storage — bucket `deckr-workspace`, region `us-south` |
 | Tunnel | ngrok static domain — exposes local backend to Orchestrate tool callbacks |
 
@@ -70,7 +72,7 @@ All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock
 
 ```
 borrower-underwriting-workspace/
-├── backend/       # FastAPI · SQLAlchemy · Alembic · 10 Orchestrate agents
+├── backend/       # FastAPI · SQLAlchemy · Alembic · 11 Orchestrate agents
 │                  # See backend/README.md for full structure, setup, and env vars
 ├── frontend/      # React 19 · TypeScript · Vite · Tailwind CSS v4
 │                  # See frontend/README.md for full structure and setup
