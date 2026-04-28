@@ -105,9 +105,10 @@ export default function FinalTab() {
         #print-portal p,
         #print-portal li,
         #print-portal td,
-        #print-portal th  { font-size: 11px !important; line-height: 1.5 !important; }
-        #print-portal .text-sm  { font-size: 11px !important; }
-        #print-portal .text-base { font-size: 13px !important; }
+        #print-portal th  { font-size: 11px !important; line-height: 1.5 !important; color: #161616 !important; }
+        #print-portal a   { color: #161616 !important; text-decoration: none !important; }
+        #print-portal .text-sm  { font-size: 11px !important; color: #161616 !important; }
+        #print-portal .text-base { font-size: 13px !important; color: #161616 !important; }
         #print-portal table { break-inside: avoid; }
       }
     `
