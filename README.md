@@ -1,12 +1,16 @@
 # Deckr
 
-Deckr is a **multi-agent AI workspace** for businesses pursuing a commercial loan or credit facility.
+**Prepare for capital. Powered by Watson.**
 
-Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
+Deckr prepares the deal the way banks review credit. Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
+
+From scattered documents to a complete prospectus in minutes.
 
 A borrower runs the pipeline and gets:
 - A **13-section credit memorandum** written from the lender's perspective
-- An **optimized term sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids.
+- A **borrower deal sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids across lenders.
+
+*Every agent output is editable. Human review is built in at every stage. Deckr supports judgment — it does not replace it.*
 
 **Built by Bankers. Powered by Watson.**
 
