@@ -88,18 +88,27 @@ export default function FinalTab() {
     style.id = 'print-portal-style'
     style.textContent = `
       @media print {
-        @page { size: letter portrait; margin: 0.65in 0.75in; }
+        @page { size: letter portrait; margin: 0.5in 0.5in; }
         body > *:not(#print-portal) { display: none !important; }
         #print-portal {
           display: block !important;
           width: 100% !important;
-          max-width: none !important;
+          max-width: 100% !important;
           margin: 0 !important;
-          padding: 0 !important;
+          padding: 24px 40px !important;
           border: none !important;
           background: white !important;
         }
-        #print-portal h2, #print-portal table { break-inside: avoid; }
+        #print-portal h1 { font-size: 18px !important; }
+        #print-portal h2 { font-size: 13px !important; break-inside: avoid; }
+        #print-portal h3 { font-size: 12px !important; }
+        #print-portal p,
+        #print-portal li,
+        #print-portal td,
+        #print-portal th  { font-size: 11px !important; line-height: 1.5 !important; }
+        #print-portal .text-sm  { font-size: 11px !important; }
+        #print-portal .text-base { font-size: 13px !important; }
+        #print-portal table { break-inside: avoid; }
       }
     `
     document.head.appendChild(style)

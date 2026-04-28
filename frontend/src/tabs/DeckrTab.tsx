@@ -111,7 +111,7 @@ export default function DeckrTab() {
     style.id = 'print-portal-style'
     style.textContent = `
       @media print {
-        @page { size: letter portrait; margin: 0.65in 0.75in; }
+        @page { size: letter portrait; margin: 0.3in 0.3in; }
         * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
         body > *:not(#print-portal) { display: none !important; }
         #print-portal {
@@ -122,6 +122,7 @@ export default function DeckrTab() {
           padding: 0 !important;
           border: none !important;
           background: white !important;
+          zoom: 0.79;
         }
         #print-portal h2, #print-portal table { break-inside: avoid; }
       }
