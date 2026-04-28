@@ -123,7 +123,14 @@ export default function DeckrTab() {
           border: none !important;
           background: white !important;
         }
-        #print-portal h2, #print-portal table { break-inside: avoid; }
+        /* Typography hierarchy: Deal Sheet → header info → section headers → body */
+        #print-portal h1                          { font-size: 22px !important; }
+        #print-portal > div > div:first-child p   { font-size: 13px !important; }
+        #print-portal .poster-grid-inner h2       { font-size: 11px !important; color: #161616 !important; break-inside: avoid; }
+        #print-portal .poster-grid-inner p,
+        #print-portal .poster-grid-inner li       { font-size: 9px !important; color: #161616 !important; }
+        #print-portal .poster-grid-inner a        { color: #161616 !important; text-decoration: none !important; }
+        #print-portal table { break-inside: avoid; }
       }
     `
     document.head.appendChild(style)
