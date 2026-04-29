@@ -189,12 +189,15 @@ function Header() {
       <div className="flex items-center gap-2">
         <span className="text-[#8d8d8d] text-xs font-mono">default</span>
         <StorageBadge />
-        <button
+        <a
+          href="https://docs.deckr-ai.com"
+          target="_blank"
+          rel="noopener noreferrer"
           className="ml-3 px-3 py-1 text-xs font-medium text-[#161616] bg-[#f4f4f4] hover:bg-white rounded transition-colors"
-          title="Export deck"
+          title="Deckr Documentation"
         >
-          Export
-        </button>
+          Docs
+        </a>
       </div>
     </header>
   )
