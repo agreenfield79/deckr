@@ -416,7 +416,7 @@ export default function DeckrPoster({ sections }: Props) {
               Borrower Package · Confidential
             </div>
             <h1 style={{ fontSize: '18px', fontWeight: 700, color: 'white', margin: 0, lineHeight: 1.2 }}>
-              Deal Sheet
+              Loan Prospectus
             </h1>
           </div>
           <div style={{ fontSize: '8px', color: '#a6c8ff', textAlign: 'right', opacity: 0.8 }}>

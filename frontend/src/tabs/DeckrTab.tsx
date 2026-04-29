@@ -123,7 +123,7 @@ export default function DeckrTab() {
           border: none !important;
           background: white !important;
         }
-        /* Typography hierarchy: Deal Sheet → header info → section headers → body */
+        /* Typography hierarchy: Loan Prospectus → header info → section headers → body */
         #print-portal h1                          { font-size: 22px !important; }
         #print-portal > div > div:first-child p   { font-size: 13px !important; }
         #print-portal .poster-grid-inner h2       { font-size: 11px !important; color: #161616 !important; break-inside: avoid; }
@@ -168,7 +168,7 @@ export default function DeckrTab() {
         <div className="max-w-sm text-center">
           <Zap size={36} className="mx-auto mb-3 text-[#ff832b] opacity-60" />
           <h2 className="text-sm font-semibold text-[#161616] mb-1">
-            Deal Sheet not yet generated
+            Loan Prospectus not yet generated
           </h2>
           <p className="text-xs text-[#6f6f6f] leading-relaxed">
             Generate the Credit Memorandum first, then run the Deckr Agent from the
@@ -190,7 +190,7 @@ export default function DeckrTab() {
         <div className="flex items-center gap-2">
           <FileText size={13} className="text-[#ff832b]" />
           <span className="text-xs font-semibold text-[#525252] uppercase tracking-wider">
-            Deal Sheet
+            Loan Prospectus
           </span>
           <span className="text-[10px] text-[#6f6f6f] bg-[#e0e0e0] px-1.5 py-0.5 rounded font-mono">
             {completedCount}/{sectionEntries.length} sections
@@ -267,7 +267,7 @@ export default function DeckrTab() {
                 </div>
               </div>
               <h1 className="text-2xl font-bold text-[#161616] tracking-tight">
-                Deal Sheet
+                Loan Prospectus
               </h1>
               <p className="text-xs text-[#525252] mt-1">
                 Prepared {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
