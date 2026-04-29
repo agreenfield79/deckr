@@ -193,7 +193,7 @@ function Header() {
           href="https://docs.deckr-ai.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-3 px-3 py-1 text-xs font-medium text-[#161616] bg-[#f4f4f4] hover:bg-white rounded transition-colors"
+          className="ml-3 px-3 py-1 text-xs font-medium text-white bg-[#0F2D5B] hover:bg-[#1A4A8A] rounded transition-colors"
           title="Deckr Documentation"
         >
           Docs
