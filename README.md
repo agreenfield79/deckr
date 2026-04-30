@@ -2,15 +2,13 @@
 
 **Prepare for capital. Powered by Watson.**
 
-Deckr prepares the deal the way banks review credit. Enter profile and terms → Upload docs → **Package complete ~5 minutes thereafter.**
-
-From scattered documents to a complete prospectus in minutes.
+From scattered documents to a complete prospectus: enter your borrower profile and loan terms → upload financial documents → **package complete in ~5 minutes.**
 
 A borrower runs the pipeline and gets:
-- A **13-section credit memorandum** written from the lender's perspective
-- A **borrower deal sheet** — structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids across lenders.
+- A 13-section **credit memorandum** written from the lender's perspective
+- A **loan prospectus sheet** structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids across lenders.
 
-*Every agent output is editable. Human review is built in at every stage. Deckr supports judgment — it does not replace it.*
+*Every agent output is editable. Human review is built in at every stage.*
 
 **Built by Bankers. Powered by Watson.**
 
