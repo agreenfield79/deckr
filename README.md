@@ -40,17 +40,17 @@ Extraction → [Financial ‖ Industry ‖ Collateral ‖ Guarantor] → Risk �
 
 | Agent | Output |
 |-------|--------|
-| Financial Data Extraction | `Financials/extracted_data.json`, `financial_data_summary.md` |
-| Financial Analysis | `Agent Notes/financial_analysis.md`, `financial_ratios.json` |
-| Industry Analysis | `Agent Notes/industry_analysis.md` |
-| Collateral | `Agent Notes/collateral_analysis.md` |
-| Guarantor | `Agent Notes/guarantor_analysis.md` |
-| SLACR Risk | `SLACR/slacr_analysis.md`, `slacr.json` |
-| Interpreter | `Agent Notes/neural_slacr.md` |
-| Packaging | `Deck/memo.md` (13-section credit memo) |
-| Review | `Agent Notes/review_notes.md` |
-| Policy | `Agent Notes/governance_clearance.md` (fair-lending governance review) |
-| Deckr | `Deck/deckr.md` (optimized term sheet) |
+| Financial Data Extraction | `Financials/extracted_data.json` — structured financials parsed from uploaded PDFs · `Financials/financial_data_summary.md` — plain-text summary of extracted figures |
+| Financial Analysis | `Agent Notes/financial_analysis.md` — 3-year income statement, balance sheet, and ratio spreads · `Agent Notes/financial_ratios.json` — machine-readable ratio data |
+| Industry Analysis | `Agent Notes/industry_analysis.md` — sector overview, market conditions, and competitive position |
+| Collateral | `Agent Notes/collateral_analysis.md` — collateral description, LTV estimate, and lien position assessment |
+| Guarantor | `Agent Notes/guarantor_analysis.md` — personal financial review, ownership structure, and beneficial ownership flags |
+| SLACR Risk | `SLACR/slacr.json` — numeric risk scores per dimension · `SLACR/slacr_analysis.md` — narrative risk rating with supporting rationale |
+| Interpreter | `Agent Notes/neural_slacr.md` — explainable risk narrative and factor-level commentary |
+| Packaging | `Deck/memo.md` — 13-section credit memorandum formatted for lender review |
+| Review | `Agent Notes/review_notes.md` — completeness check, internal consistency flags, and missing data notes |
+| Policy | `Agent Notes/governance_clearance.md` — regulatory compliance findings against ECOA, FHA, SBA, and OCC/FFIEC guidance |
+| Deckr | `Deck/deckr.md` — one-page loan prospectus with optimized terms, structure, and key metrics |
 
 All agents run through **IBM watsonx Orchestrate** (GPT-OSS 120B via AWS Bedrock).
 
