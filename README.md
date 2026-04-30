@@ -24,6 +24,8 @@ A borrower runs the pipeline and gets:
 
 📖 **Documentation: [docs.deckr-ai.com](https://docs.deckr-ai.com)**
 
+📄 **Demo instructions: [Demo_Instructions.pdf](https://www.dropbox.com/scl/fi/vmvgl7ivkcp48ac6r7yny/Demo_Instructions.pdf?rlkey=5oxn9ca88gti5kf7lh6jm0jms&st=p83o629w&raw=1)**
+
 🎬 **Full walkthrough: [YouTube Demo](https://youtu.be/i48Wc26OdYc)**
 
 📋 **Demo tester? [Usability Survey](https://docs.google.com/forms/d/e/1FAIpQLScIN5kWuCxVUXTBAOSukRI3YU9e78zcdfeyl5udJQUCh0VkQA/viewform?usp=publish-editor)**
