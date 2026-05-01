@@ -1,10 +1,12 @@
 # Deckr
 
-**Prepare for capital. Powered by Watson.**
+**Deckr is an agentic commercial loan packaging platform that turns raw financials into a complete credit memo and borrower prospectus.**
 
-From scattered documents to a complete Loan Prospectus in minutes.
+Built for business owners and financial advisors who need institutional-quality deal packaging — without the investment banker.
 
-📋 Enter borrower profile & loan terms &nbsp;→&nbsp; 📄 Upload financials &nbsp;→&nbsp; ⚡ Run pipeline (~5 min) &nbsp;→&nbsp; 📑 Credit Memo &nbsp;+&nbsp; 📰 Loan Prospectus
+```
+Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  →  Credit Memo  →  Loan Prospectus
+```
 
 A borrower runs the pipeline and gets:
 - A 13-section **credit memorandum** written from the lender's perspective.
