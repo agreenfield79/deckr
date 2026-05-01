@@ -1,8 +1,6 @@
 # Deckr
 
-**Deckr is an agentic commercial loan packaging platform that turns raw financials into a complete credit memo and borrower prospectus.**
-
-Built for business owners and financial advisors who need institutional-quality deal packaging — without the investment banker.
+**Deckr is an agentic commercial loan packaging platform that turns raw financials into a complete credit memo and borrower prospectus.** Built for business owners and financial executives who need institutional-quality deal packaging — without the investment banker.
 
 ```
 Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  →  Credit Memo  →  Loan Prospectus
