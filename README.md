@@ -158,6 +158,9 @@ This repository is made available for review and evaluation purposes only. No pa
 
 - `backend/.env` and `backend/data/` are gitignored — never committed
 - All IBM API calls are backend-only — credentials never reach the frontend
-- Upload allowlist enforced — `.exe` / `.sh` rejected; 50 MB max
+- All database access is backend-only — frontend never connects to PostgreSQL, MongoDB, or Neo4j directly
+- Upload allowlist enforced — PDF only for financial documents; `.exe` / `.sh` rejected; 50 MB max
+- Per-deal workspace isolation — each pipeline run is scoped to an isolated deal directory; no cross-deal data access
+- No user PII stored — the platform stores deal financials only, not personal credentials or identity data
 - All cloud secrets stored in GCP Secret Manager — never in environment files on Cloud Run
-- Cloud Run endpoint is publicly accessible for the demo; `ALLOWED_ORIGINS` will be restricted to known domains post-demo
+- `ALLOWED_ORIGINS` restricted to known domains on Cloud Run
