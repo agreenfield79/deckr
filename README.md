@@ -9,7 +9,7 @@
 
 *From scattered documents to a complete prospectus — faster than a banker would believe.*
 
-**Deckr** is an **agentic commercial loan packaging platform** that turns raw financials into a complete credit memo and borrower prospectus. Built for **business owners and financial executives** who need institutional-quality deal packaging — without the investment banker.
+**Deckr** is an **agentic commercial loan packaging platform** that turns raw financials into a complete credit memo and borrower prospectus. Built for **business owners and finance executives at every level** — a collaborative workspace to explore deal structure, test assumptions, and iterate on your package before it reaches a lender's desk.
 
 ## Why it exists
 
@@ -28,7 +28,7 @@ flowchart LR
 ## What you get
 
 - A 13-section **credit memorandum** that reads like it was written by the bank's credit team.
-- A **Loan Prospectus** structured from the lender's logic and calibrated to attract competitive bids.
+- A **Loan Prospectus** structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids.
 - Every section is **editable** — regenerate any agent output individually without re-running the full pipeline.
 - An **interactive risk scorecard** across 8 credit dimensions — with explainable AI commentary on every factor.
 - Multi-year **financial projections** with **covenant compliance tracking** and interactive charts.
