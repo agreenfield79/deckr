@@ -1,18 +1,27 @@
 # Deckr
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![IBM watsonx](https://img.shields.io/badge/IBM%20watsonx-Orchestrate-1F70C1?logo=ibm&logoColor=white)
+![Live](https://img.shields.io/badge/live-deckr--ai.com-brightgreen)
+![Release](https://img.shields.io/github/v/release/agreenfield79/deckr)
+
+**Designed by Bankers. Powered by Watson.**
+
 **Deckr** is an **agentic commercial loan packaging platform** that turns raw financials into a complete credit memo and borrower prospectus. Built for **business owners and financial executives** who need institutional-quality deal packaging — without the investment banker.
+
+Commercial loan packages take weeks and cost thousands in advisory fees. Deckr automates the entire process. In a single run, Deckr produces:
 
 ```
 Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  →  Credit Memo  →  Loan Prospectus
 ```
 
-A borrower runs the pipeline and gets:
+One **agentic pipeline** run produces:
 - A 13-section **credit memorandum** written from the lender's perspective.
 - A **loan prospectus sheet** structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids across lenders.
 
 *Every agent output is editable. Human review is built in at every stage.*
-
-**Built by Bankers. Powered by Watson.**
 
 ---
 
