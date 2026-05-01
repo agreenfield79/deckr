@@ -134,7 +134,7 @@ Agent orchestration powered by the watsonx Orchestrate ADK. Language models serv
 
 ## License
 
-© 2025 Alan Greenfield. All rights reserved.
+© 2026 Alan Greenfield. All rights reserved.
 
 This repository is made available for review and evaluation purposes only. No part of this codebase may be reproduced, distributed, or used without explicit written permission from the author.
 
