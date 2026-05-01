@@ -24,10 +24,12 @@ backend/
 │                      # risk, interpreter, packaging, review, policy, deckr
 ├── prompts/           # <agent>_agent.txt — system prompts
 ├── knowledge_bases/   # policy_regulatory_kb — ECOA, FHA, SBA, OCC/FFIEC (policy_agent)
-├── migrations/        # Alembic migrations 001–011
+├── migrations/        # Alembic migrations 001–012
 │                      # 001: initial schema
 │                      # 002: column corrections + ENUM bootstrap
 │                      # 003–011: incremental schema refinements
+│                      # 012: widen financial_ratios NUMERIC columns to (20,4)
+├── seed_prompt_versions.py  # Seeds prompt version history for agent prompts
 ├── tools_openapi.yaml # OpenAPI spec imported into IBM watsonx Orchestrate
 ├── Dockerfile         # Cloud Run image — uvicorn on ${PORT:-8000}
 ├── docker-compose.yml # Local stack: PostgreSQL :5432, MongoDB :27017, Neo4j :7474/:7687
@@ -120,13 +122,21 @@ ORCHESTRATE_AGENT_ID_DECKR=
 # Databases
 DB_URL=                   # sqlite:///./data/deckr.db  or  postgresql+psycopg2://...
 MONGO_URL=                # mongodb://localhost:27017
+MONGO_DB_NAME=            # deckr
 NEO4J_URL=                # bolt://localhost:7687
+NEO4J_USER=               # neo4j
+NEO4J_PASSWORD=           # SENSITIVE — set in .env only, never commit
+FIRESTORE_PROJECT_ID=     # GCP project ID (optional — Firestore feature flag)
 
 # Storage & Routing
 STORAGE_BACKEND=          # local | cloud
 COS_API_KEY=
 COS_BUCKET_NAME=          # deckr-workspace
 WORKSPACE_ROOT=
+
+# Server
+ALLOWED_ORIGINS=          # http://localhost:5173 (local) or your Vercel domain
+LOG_LEVEL=                # INFO | DEBUG
 
 # External
 SERPAPI_KEY=
@@ -146,6 +156,6 @@ Boolean strings — defaults shown:
 | `ENABLE_EMBEDDINGS` | `true` | Semantic retrieval for agent context |
 | `USE_COS` | `false` | IBM COS for file I/O |
 | `ENABLE_WDU` | `false` | watsonx Document Understanding (pending) |
-| `MULTI_TENANT` | `false` | Per-deal filesystem isolation |
+| `MULTI_DEAL_MODE` | `false` | Per-deal filesystem isolation |
 
 
