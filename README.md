@@ -7,17 +7,26 @@
 ![Live](https://img.shields.io/badge/live-deckr--ai.com-brightgreen)
 ![Release](https://img.shields.io/github/v/release/agreenfield79/deckr)
 
-**Designed by Bankers. Powered by Watson.**
+*From scattered documents to a complete prospectus — faster than a banker would believe.*
 
 **Deckr** is an **agentic commercial loan packaging platform** that turns raw financials into a complete credit memo and borrower prospectus. Built for **business owners and financial executives** who need institutional-quality deal packaging — without the investment banker.
 
-Commercial loan packaging takes weeks and costs thousands in advisory fees. Deckr automates the entire process. In a single run, Deckr produces:
+## Why it exists
 
-```
-Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  →  Credit Memo  →  Loan Prospectus
+Every year, small businesses get rejected for commercial financing — not because of their numbers, but because they can't prepare a package the way banks expect. Deckr closes that gap.
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[Upload Documents] --> B[Run Pipeline]
+  B --> C[Review Output]
+  C --> D[Download Package]
+  D --> E[Submit to Lender]
 ```
 
-**What you get**:
+## What you get
+
 - A 13-section **credit memorandum** that reads like it was written by the bank's credit team.
 - A **Loan Prospectus** structured from the lender's logic and calibrated to attract competitive bids.
 - Every section is **editable** — regenerate any agent output individually without re-running the full pipeline.
@@ -25,6 +34,13 @@ Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  
 - Multi-year **financial projections** with **covenant compliance tracking** and interactive charts.
 - **Chat live** with any agent in the Agent Panel — ask questions, request revisions, or go deeper on any section.
 - Complete **audit trail** — every agent output saved as downloadable markdown and JSON.
+
+## Who uses Deckr
+
+| | |
+|---|---|
+| **Business Owners** | Companies seeking commercial financing who need a professional loan package without a dedicated finance team. |
+| **Lenders & Underwriters** | Community banks and credit unions scaling loan volume without scaling their credit staff. |
 
 ---
 
@@ -143,6 +159,8 @@ See **[`frontend/README.md`](frontend/README.md)** for frontend setup and build 
 Built with [IBM watsonx Orchestrate](https://www.ibm.com/products/watsonx-orchestrate) and [IBM watsonx.ai](https://www.ibm.com/products/watsonx-ai).
 
 Agent orchestration powered by the watsonx Orchestrate ADK. Language models served via AWS Bedrock (GPT-OSS 120B). Embeddings via `ibm/slate-125m-english-rtrvr-v2`.
+
+*Designed by Bankers. Powered by Watson.*
 
 ---
 
