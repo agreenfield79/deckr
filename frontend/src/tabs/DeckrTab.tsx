@@ -24,26 +24,31 @@ function parseSections(markdown: string): Record<string, string> {
 
 function toDeckrSections(sections: Record<string, string>, raw: string): DeckrSections {
   const get = (key: string) => sections[key] ?? ''
-  // §5 — new name first; fall back to legacy names for existing deckr.md files
+  // §6 — new name first; fall back to legacy names for existing deckr.md files
   const loanStructure       = get('Proposed Loan Structure') || get('Loan Structure')
   // legacy — kept so buildHeaderLine can extract Contact from old files
   const biddingInstructions = get('Bidding Instructions')
   const s: DeckrSections = {
-    header:           get('Header'),
-    companyOverview:  get('Company Overview & History'),
-    performance:      get('Performance Summary'),
-    // §4 — new name first; fall back to legacy section names for existing files
-    partnershipValue: get('Partnership Value') || get('Credit Rationale') || get('Strengths & Risk Mitigants') || get('Ability to Repay'),
+    header:              get('Header'),
+    companyOverview:     get('Company Overview & History'),
+    // §3 — new section; gracefully absent in old deckr.md files
+    useOfProceeds:       get('Use of Proceeds') || undefined,
+    performance:         get('Performance Summary'),
+    // §5 — new name first; fall back to legacy section names for existing files
+    partnershipValue:    get('Partnership Value') || get('Credit Rationale') || get('Strengths & Risk Mitigants') || get('Ability to Repay'),
     loanStructure,
+    // §7 — new section; gracefully absent in old deckr.md files
+    transactionTimeline: get('Transaction Timeline') || undefined,
     biddingInstructions,
-    // §6 prose — new section name; legacy fallback omitted (was not a section before)
-    projectionsText:  get('Projections'),
+    // §8 prose — new section name; legacy fallback omitted (was not a section before)
+    projectionsText:     get('Projections'),
     raw,
-    hasStructure:     false,
+    hasStructure:        false,
   }
   const filledCount = [
     s.header, s.companyOverview, s.performance, s.partnershipValue,
     loanStructure || biddingInstructions,
+    s.useOfProceeds, s.transactionTimeline,
   ].filter(Boolean).length
   s.hasStructure = filledCount >= 3
   return s

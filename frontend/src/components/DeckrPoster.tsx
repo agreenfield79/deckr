@@ -2,19 +2,21 @@ import MarkdownViewer from '../editor/MarkdownViewer'
 
 // ---------------------------------------------------------------------------
 // DeckrSections — exported so DeckrTab can import and build the typed object.
-// New format (6 sections): §4 partnershipValue, §5 loanStructure (3-col table), §6 projections prose.
-// Legacy format (5 sections): partnershipValue falls back to abilityToRepay names; biddingInstructions
-//   kept for header contact extraction on old files.
+// New format (8 sections): §3 useOfProceeds, §4 performance, §5 partnershipValue,
+//   §6 loanStructure (3-col table), §7 transactionTimeline, §8 projections prose.
+// Legacy format: biddingInstructions kept for header contact extraction on old files.
 // ---------------------------------------------------------------------------
 
 export interface DeckrSections {
   header: string               // ## 1. Header
   companyOverview: string      // ## 2. Company Overview & History
-  performance: string          // ## 3. Performance Summary
-  partnershipValue: string     // ## 4. Partnership Value (replaces Ability to Repay)
-  loanStructure: string        // ## 5. Proposed Loan Structure (3-col table: Term | Bank Terms | Proposed)
+  useOfProceeds?: string       // ## 3. Use of Proceeds (optional — renders gracefully if absent)
+  performance: string          // ## 4. Performance Summary
+  partnershipValue: string     // ## 5. Partnership Value
+  loanStructure: string        // ## 6. Proposed Loan Structure (3-col table: Term | Bank Terms | Proposed)
+  transactionTimeline?: string // ## 7. Transaction Timeline (optional — renders gracefully if absent)
   biddingInstructions: string  // legacy — kept for header contact extraction on old files
-  projectionsText?: string     // ## 6. Projections prose — retained for possible future use
+  projectionsText?: string     // ## 8. Projections prose
   raw: string                  // full original markdown — List View fallback
   hasStructure: boolean        // true when ≥3 named sections parsed
 }
@@ -405,28 +407,28 @@ export default function DeckrPoster({ sections }: Props) {
       {/* Full-width IBM blue header                                          */}
       {/* ------------------------------------------------------------------ */}
       <div style={{
-        backgroundColor: '#0f62fe',
+        backgroundColor: '#1a2e4a',
         padding: '12px 22px',
         printColorAdjust: 'exact',
         WebkitPrintColorAdjust: 'exact',
       } as React.CSSProperties}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#a6c8ff', marginBottom: '3px' }}>
+            <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#b8c8d8', marginBottom: '3px' }}>
               Borrower Package · Confidential
             </div>
             <h1 style={{ fontSize: '18px', fontWeight: 700, color: 'white', margin: 0, lineHeight: 1.2 }}>
               Loan Prospectus
             </h1>
           </div>
-          <div style={{ fontSize: '8px', color: '#a6c8ff', textAlign: 'right', opacity: 0.8 }}>
+          <div style={{ fontSize: '8px', color: '#b8c8d8', textAlign: 'right', opacity: 0.8 }}>
             Powered by Deckr · IBM watsonx
           </div>
         </div>
 
         {/* Section 1 header line — Name | Loan Type | Amount | Contact */}
         {sections.header && (
-          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(166,200,255,0.4)' }}>
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(184,200,216,0.35)' }}>
             <p style={{ fontSize: '11px', color: 'white', margin: 0, lineHeight: 1.4 }}>
               {headerLine}
             </p>
@@ -439,22 +441,28 @@ export default function DeckrPoster({ sections }: Props) {
       {/* ------------------------------------------------------------------ */}
       <div className="poster-grid-inner" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '10px' }}>
 
-        {/* LEFT COLUMN — Company Overview + Performance Summary + Credit Rationale */}
+        {/* LEFT COLUMN — Company Overview + Use of Proceeds + Performance Summary + Partnership Value */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 
-          <Panel title="Company Overview & History" accentColor="#0f62fe">
+          <Panel title="Company Overview & History" accentColor="#374151">
             {sections.companyOverview
               ? <MarkdownViewer content={sections.companyOverview} textSize="10px" />
               : PENDING}
           </Panel>
 
-          <Panel title="Performance Summary" accentColor="#198038">
+          <Panel title="Use of Proceeds" accentColor="#374151">
+            {sections.useOfProceeds
+              ? <MarkdownViewer content={sections.useOfProceeds} textSize="10px" />
+              : PENDING}
+          </Panel>
+
+          <Panel title="Performance Summary" accentColor="#374151">
             {sections.performance
               ? <PerformanceContent content={sections.performance} />
               : PENDING}
           </Panel>
 
-          <Panel title="Partnership Value" accentColor="#ff832b">
+          <Panel title="Partnership Value" accentColor="#374151">
             {sections.partnershipValue
               ? <MarkdownViewer content={sections.partnershipValue} textSize="10px" />
               : PENDING}
@@ -462,15 +470,15 @@ export default function DeckrPoster({ sections }: Props) {
 
         </div>
 
-        {/* RIGHT COLUMN — Loan Structure (full height) */}
+        {/* RIGHT COLUMN — Loan Structure + Transaction Timeline + Bidding Instructions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 
-          {/* Loan Structure accent panel */}
+          {/* Loan Structure — dark gold accent */}
           <div style={{
             borderRadius: '6px',
-            border: '1px solid #c9deff',
-            borderLeft: '4px solid #0043ce',
-            backgroundColor: '#edf5ff',
+            border: '1px solid #d4c4a0',
+            borderLeft: '4px solid #b8860b',
+            backgroundColor: '#faf8f3',
             padding: '10px',
             printColorAdjust: 'exact',
             WebkitPrintColorAdjust: 'exact',
@@ -478,10 +486,10 @@ export default function DeckrPoster({ sections }: Props) {
             <h2 style={{
               fontSize: '11px',
               fontWeight: 700,
-              color: '#0043ce',
+              color: '#7a5c0a',
               margin: '0 0 2px',
               paddingBottom: '4px',
-              borderBottom: '1px solid #c9deff',
+              borderBottom: '1px solid #d4c4a0',
             }}>
               Proposed Loan Structure
             </h2>
@@ -490,12 +498,19 @@ export default function DeckrPoster({ sections }: Props) {
               : PENDING}
           </div>
 
+          {/* Transaction Timeline */}
+          <Panel title="Transaction Timeline" accentColor="#374151">
+            {sections.transactionTimeline
+              ? <MarkdownViewer content={sections.transactionTimeline} textSize="10px" />
+              : PENDING}
+          </Panel>
+
           {/* Bidding Instructions — pulled from Section 1 Header metadata */}
           {(biddingInfo.contact || biddingInfo.date) && (
             <div style={{
               borderRadius: '6px',
               border: '1px solid #e0e0e0',
-              borderLeft: '4px solid #6f6f6f',
+              borderLeft: '4px solid #374151',
               backgroundColor: '#f4f4f4',
               padding: '10px',
             }}>
@@ -558,7 +573,7 @@ export default function DeckrPoster({ sections }: Props) {
       {/* ------------------------------------------------------------------ */}
       {/* Full-width footer                                                   */}
       {/* ------------------------------------------------------------------ */}
-      <div style={{ padding: '5px 22px', borderTop: '1px solid #ffd9b5' }}>
+      <div style={{ padding: '5px 22px', borderTop: '1px solid #d1d5db' }}>
         <p style={{ fontSize: '8px', color: '#a8a8a8', textAlign: 'center', fontStyle: 'italic', margin: 0 }}>
           Generated by Deckr · Powered by IBM watsonx · This document is prepared for the borrower's use in approaching prospective lenders.
         </p>
