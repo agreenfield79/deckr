@@ -23,7 +23,7 @@ src/
 │                  # useAgent.ts, useAgentEvents.ts, AgentActions, AgentMessage
 ├── api/           # client.ts, agent.ts, upload.ts, financials.ts, workspace.ts,
 │                  # health.ts, forms.ts, deck.ts, deckr.ts, interpret.ts,
-│                  # pipelineRuns.ts, projections.ts, slacr.ts, status.ts
+│                  # pipelineRuns.ts, projections.ts, slacr.ts, status.ts, admin.ts
 ├── charts/        # FinancialCharts.tsx, ProjectionsChart.tsx
 ├── components/    # DealGraph, ExternalNetworkGraph, RiskConcentrationGraph,
 │                  # FinancialSummaryGrid, PipelineGantt, RiskScoreGauge,
