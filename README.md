@@ -11,17 +11,20 @@
 
 **Deckr** is an **agentic commercial loan packaging platform** that turns raw financials into a complete credit memo and borrower prospectus. Built for **business owners and financial executives** who need institutional-quality deal packaging — without the investment banker.
 
-Commercial loan packages take weeks and cost thousands in advisory fees. Deckr automates the entire process. In a single run, Deckr produces:
+Commercial loan packaging takes weeks and costs thousands in advisory fees. Deckr automates the entire process. In a single run, Deckr produces:
 
 ```
 Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)  →  Credit Memo  →  Loan Prospectus
 ```
 
-One **agentic pipeline** run produces:
-- A 13-section **credit memorandum** written from the lender's perspective.
-- A **loan prospectus sheet** structured from the lender's logic, calibrated to the borrower's advantage, and designed to attract competitive bids across lenders.
-
-*Every agent output is editable. Human review is built in at every stage.*
+**What you get**:
+- A 13-section **credit memorandum** that reads like it was written by the bank's credit team.
+- A **Loan Prospectus** structured from the lender's logic and calibrated to attract competitive bids.
+- Every section is **editable** — regenerate any agent output individually without re-running the full pipeline.
+- An **interactive risk scorecard** across 8 credit dimensions — with explainable AI commentary on every factor.
+- Multi-year **financial projections** with **covenant compliance tracking** and interactive charts.
+- **Chat live** with any agent in the Agent Panel — ask questions, request revisions, or go deeper on any section.
+- Complete **audit trail** — every agent output saved as downloadable markdown and JSON.
 
 ---
 
