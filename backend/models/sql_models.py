@@ -826,7 +826,7 @@ class FinancialRatio(Base):
     entity_id             = Column(String(36), ForeignKey("entities.entity_id", ondelete="CASCADE"))
     pipeline_run_id       = Column(String(36), ForeignKey("pipeline_runs.pipeline_run_id"))
     fiscal_year           = Column(Integer, nullable=False)
-    dscr                  = Column(Numeric(10, 4))
+    dscr                  = Column(Numeric(20, 4))
     fixed_charge_coverage = Column(Numeric(10, 4))
     leverage_ratio        = Column(Numeric(10, 4))
     funded_debt_to_ebitda = Column(Numeric(10, 4))
@@ -836,7 +836,7 @@ class FinancialRatio(Base):
     ebitda_margin         = Column(Numeric(8, 6))
     net_profit_margin     = Column(Numeric(8, 6))
     return_on_assets      = Column(Numeric(8, 6))
-    interest_coverage     = Column(Numeric(10, 4))
+    interest_coverage     = Column(Numeric(20, 4))
     asset_turnover        = Column(Numeric(10, 4))
     computed_at           = Column(DateTime(timezone=True))
 

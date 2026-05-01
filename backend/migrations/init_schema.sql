@@ -449,7 +449,7 @@ CREATE TABLE financial_ratios (
     entity_id               UUID REFERENCES entities(entity_id) ON DELETE CASCADE,
     pipeline_run_id         UUID REFERENCES pipeline_runs(pipeline_run_id),
     fiscal_year             INT NOT NULL,
-    dscr                    NUMERIC,
+    dscr                    NUMERIC(20,4),
     fixed_charge_coverage   NUMERIC,
     leverage_ratio          NUMERIC,
     funded_debt_to_ebitda   NUMERIC,
@@ -459,7 +459,7 @@ CREATE TABLE financial_ratios (
     ebitda_margin           NUMERIC,
     net_profit_margin       NUMERIC,
     return_on_assets        NUMERIC,
-    interest_coverage       NUMERIC(10,4),
+    interest_coverage       NUMERIC(20,4),
     asset_turnover          NUMERIC(10,4),
     computed_at             TIMESTAMPTZ
 );
