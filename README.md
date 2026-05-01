@@ -2,11 +2,7 @@
 
 **Prepare for capital. Powered by Watson.**
 
-```
-Enter Profile & Loan Terms  →  Upload Financials  →  Run Pipeline (~5 min)
-                                                              ↓
-                                              Credit Memo  +  Loan Prospectus
-```
+📋 Enter borrower profile & loan terms &nbsp;→&nbsp; 📄 Upload financials &nbsp;→&nbsp; ⚡ Run pipeline (~5 min) &nbsp;→&nbsp; 📊 Credit memo + loan prospectus
 
 A borrower runs the pipeline and gets:
 - A 13-section **credit memorandum** written from the lender's perspective.
