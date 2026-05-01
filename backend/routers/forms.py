@@ -89,6 +89,8 @@ def _write_loan_terms_json(request: LoanRequest) -> None:
         lt: dict = {
             "loan_amount":                  float(request.loan_amount) if request.loan_amount else None,
             "loan_type":                    request.loan_type or None,       # term / revolver / LOC / SBA / bridge
+            "loan_purpose":                 request.loan_purpose or None,
+            "desired_timing":               request.desired_timing or None,
             "interest_rate":               rate_decimal or None,
             "rate_type":                   "fixed",                           # fixed / floating — default fixed; update when floating-rate toggle added
             "amortization_years":          amortization_years if request.amortization_months else None,
